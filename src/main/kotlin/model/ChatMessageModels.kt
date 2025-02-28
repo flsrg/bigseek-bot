@@ -7,8 +7,6 @@ import kotlinx.serialization.Serializable
 data class ChatMessage(
     val role: String,
     val content: String,
-    val reasoning: String? = null,
-    val refusal: String? = null
 )
 
 @Serializable
@@ -16,20 +14,22 @@ data class ChatRequest(
     val model: String,
     @SerialName("chain_of_thought")
     val chainOfThought: Boolean = true,
-    val stream: Boolean = false,
-    val messages: List<ChatMessage>
-)
-
-@Serializable
-data class ChatChoice(
-    val index: Int,
-    val message: ChatMessage
+    val messages: List<ChatMessage>,
+    val stream: Boolean = true
 )
 
 @Serializable
 data class ChatResponse(
-    val id: String,
-    val `object`: String,
-    val created: Long,
-    val choices: List<ChatChoice>
+    val choices: List<StreamChoice>,
+)
+
+@Serializable
+data class StreamChoice(
+    val delta: Delta? = null,
+)
+
+@Serializable
+data class Delta(
+    val content: String? = null,
+    val reasoning: String? = null,
 )
