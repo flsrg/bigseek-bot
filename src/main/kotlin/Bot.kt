@@ -36,6 +36,8 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         private const val MESSAGE_MAX_LENGTH = 3000
         private const val MARKDOWN_PARSE_ERROR_MESSAGE = "can't parse entities: Can't find end of the entity starting at byte offset"
         private const val MESSAGE_THE_SAME_ERROR_MESSAGE = "message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"
+
+        private const val MAX_HISTORY_LENGTH = 10
     }
 
     private val log: org.slf4j.Logger = LoggerFactory.getLogger(javaClass)
@@ -46,6 +48,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val botScope = CoroutineScope(Dispatchers.Default + Job())
+    private val chatHistories = ConcurrentHashMap<String, MutableList<ChatMessage>>()
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -74,27 +77,36 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     }
 
     private fun handleMessage(update: Update) {
+        val startMillis = System.currentTimeMillis()
+
         val userMessage = update.message.text
         val chatId = update.message.chat.id.toString()
-        log.info("${update.message.from.userName} send: $userMessage")
+
+        val history = chatHistories.getOrPut(chatId) { mutableListOf() }
+
+        history.add(ChatMessage(role = "user", content = userMessage))
+        while (history.size > MAX_HISTORY_LENGTH) {
+            history.removeAt(0)
+        }
+        log.info("${update.message.from.userName} asks: ${history.joinToString("\n")}")
 
         activeJobs[chatId]?.cancel(CancellationException("User started new chat"))
 
-        val startMillis = System.currentTimeMillis()
-
-        val requestPayload = ChatRequest(
-            model = "deepseek/deepseek-r1:free",
-            chainOfThought = true,
-            messages = listOf(ChatMessage(role = "user", content = userMessage)),
-            stream = true
-        )
-
         val newJob = botScope.launch {
+
+            val requestPayload = ChatRequest(
+                model = "deepseek/deepseek-r1:free",
+                chainOfThought = true,
+                messages = history.toList(),
+                stream = true
+            )
+
             execute(SendMessage(chatId.toString(), "Думаю..."))
 
             val buffer = StringBuilder()
             val contentBuffer = StringBuilder()
             val reasoningBuffer = StringBuilder()
+            val fullContentBuffer = StringBuilder()
             var contentMessageId: Int? = null
             var reasoningMessageId: Int? = null
 
@@ -152,6 +164,8 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                                             existingMessageId = reasoningMessageId,
                                         )
                                     } else if (isResponding) {
+                                        fullContentBuffer.append(buffer.toString())
+
                                         contentBuffer.append(buffer.toString())
                                         val contentMessage = contentBuffer.toString()
 
@@ -179,6 +193,16 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                 log.info("Response (reasoning = $reasoningBuffer, content = $contentBuffer)")
 
             } finally {
+                val fullContentMessage = fullContentBuffer.toString()
+                if (fullContentMessage.isNotEmpty()) {
+                    val history = chatHistories.getOrPut(chatId) { mutableListOf() }
+
+                    history.add(ChatMessage(role = "assistant", content = fullContentMessage))
+                    while (history.size > MAX_HISTORY_LENGTH) {
+                        history.removeAt(0)
+                    }
+                }
+
                 activeJobs.remove(chatId)
 
                 log.info("Responding to ${update.message.from.userName} completed " +
