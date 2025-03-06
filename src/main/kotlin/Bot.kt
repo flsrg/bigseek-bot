@@ -38,7 +38,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         private const val MARKDOWN_PARSE_ERROR_MESSAGE = "can't parse entities: Can't find end of the entity starting at byte offset"
         private const val MESSAGE_THE_SAME_ERROR_MESSAGE = "message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"
 
-        private const val MAX_HISTORY_LENGTH = 10
+        private const val MAX_HISTORY_LENGTH = 20
 
         private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
         private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
@@ -183,10 +183,10 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                                             existingMessageId = reasoningMessageId,
                                         )
                                     } else if (isResponding) {
-                                        fullContentBuffer.append(buffer.toString())
-
                                         contentBuffer.append(buffer.toString())
                                         val contentMessage = contentBuffer.toString()
+
+                                        fullContentBuffer.append(contentMessage)
 
                                         if (contentBuffer.length > MESSAGE_MAX_LENGTH) {
                                             contentMessageId = null
@@ -212,6 +212,13 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                 log.info("Response (reasoning = $reasoningBuffer, content = $contentBuffer)")
 
             } finally {
+                if (buffer.isNotEmpty()) {
+                    contentBuffer.append(buffer.toString())
+                    val contentMessage = contentBuffer.toString()
+                    fullContentBuffer.append(contentMessage)
+                    updateOrSendMessage(chatId, contentMessage, contentMessageId)
+                }
+
                 val fullContentMessage = fullContentBuffer.toString()
                 if (fullContentMessage.isNotEmpty()) {
                     val assistantHistMessage = ChatMessage(role = "assistant", content = fullContentMessage)
@@ -229,10 +236,6 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
                 if (contentBuffer.isEmpty() && reasoningBuffer.isEmpty()) {
                     execute(botMessage(chatId, "Плохой провайдер, попробуйте еще раз"))
-                }
-                if (buffer.isNotEmpty()) {
-                    contentBuffer.append(buffer.toString())
-                    updateOrSendMessage(chatId, contentBuffer.toString(), contentMessageId)
                 }
             }
         }
