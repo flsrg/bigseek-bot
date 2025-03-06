@@ -41,6 +41,8 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
         private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
         private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
+
+        private const val START_DEFAULT_COMMAND = "/start"
     }
 
     private val log: org.slf4j.Logger = LoggerFactory.getLogger(javaClass)
@@ -84,6 +86,11 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
         val userMessage = update.message.text
         val chatId = update.message.chat.id.toString()
+
+        if (update.message.text == START_DEFAULT_COMMAND) {
+            execute(botMessage(chatId, "Го"))
+            return
+        }
 
         val history = chatHistories.getOrPut(chatId) { mutableListOf() }
 
