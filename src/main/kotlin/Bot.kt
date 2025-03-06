@@ -14,6 +14,7 @@ import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.future.await
 import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
@@ -26,13 +27,13 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.LinkedBlockingDeque
 
 class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     companion object {
         //TODO: Move to system environment
         private const  val API_KEY = "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"
 
-        private const val CONNECTION_TIMEOUT = 10 * 60 * 1000L
         private const val MESSAGE_MAX_LENGTH = 3000
         private const val MARKDOWN_PARSE_ERROR_MESSAGE = "can't parse entities: Can't find end of the entity starting at byte offset"
         private const val MESSAGE_THE_SAME_ERROR_MESSAGE = "message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"
@@ -51,21 +52,29 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         encodeDefaults = true
     }
 
-    private val activeJobs = ConcurrentHashMap<String, Job>()
-    private val botScope = CoroutineScope(Dispatchers.Default + Job())
-    private val chatHistories = ConcurrentHashMap<String, MutableList<ChatMessage>>()
+    private val chatScopes = ConcurrentHashMap<String, CoroutineScope>()
+    private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val chatJobs = ConcurrentHashMap<String, Job>()
+
+    private val chatHistories = ConcurrentHashMap<String, LinkedBlockingDeque<ChatMessage>>()
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(format)
         }
         install(HttpTimeout) {
-            // Disable or extend timeouts for streaming connections:
-            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS  // 0 means no timeout
-            socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS   // disable socket timeout if necessary
-            connectTimeoutMillis = CONNECTION_TIMEOUT  // adjust as needed
+            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+            socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
         }
         install(SSE)
+        engine {
+            maxConnectionsCount = 1000
+            endpoint {
+                maxConnectionsPerRoute = 100
+                keepAliveTime = 5000
+                pipelineMaxSize = 20
+            }
+        }
     }
 
     override fun getBotUsername() = "Bigdick"
@@ -75,9 +84,11 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     }
 
     override fun onUpdateReceived(update: Update) {
-        when {
-            update.hasMessage() && update.message.hasText() -> handleMessage(update)
-            update.hasCallbackQuery() -> handleCallbackQuery(update)
+        rootScope.launch {
+            when {
+                update.hasMessage() && update.message.hasText() -> handleMessage(update)
+                update.hasCallbackQuery() -> handleCallbackQuery(update)
+            }
         }
     }
 
@@ -87,31 +98,29 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         val userMessage = update.message.text
         val chatId = update.message.chat.id.toString()
 
-        if (update.message.text == START_DEFAULT_COMMAND) {
+        if (userMessage == START_DEFAULT_COMMAND || userMessage.isEmpty()) {
             execute(botMessage(chatId, "Го"))
             return
         }
 
-        val history = chatHistories.getOrPut(chatId) { mutableListOf() }
+        addToHistory(chatId, ChatMessage(role = "user", content = userMessage))
+        log.info("${update.message.from.userName} asks: ${chatHistories[chatId]!!.joinToString("\n")}")
 
-        history.add(ChatMessage(role = "user", content = userMessage))
-        while (history.size > MAX_HISTORY_LENGTH) {
-            history.removeAt(0)
+        val chatScope = chatScopes.getOrPut(chatId) {
+            CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineName("Chat-$chatId"))
         }
-        log.info("${update.message.from.userName} asks: ${history.joinToString("\n")}")
+        chatJobs[chatId]?.cancel(CancellationException("New message in chat"))
 
-        activeJobs[chatId]?.cancel(CancellationException("User started new chat"))
-
-        val newJob = botScope.launch {
+        val newJob = chatScope.launch {
 
             val requestPayload = ChatRequest(
                 model = "deepseek/deepseek-r1:free",
                 chainOfThought = true,
-                messages = history.toList(),
+                messages = chatHistories[chatId]!!.toList(),
                 stream = true
             )
 
-            execute(SendMessage(chatId.toString(), "Думаю..."))
+            executeAsync(SendMessage(chatId, "Думаю...")).await()
 
             val buffer = StringBuilder()
             val contentBuffer = StringBuilder()
@@ -205,15 +214,11 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             } finally {
                 val fullContentMessage = fullContentBuffer.toString()
                 if (fullContentMessage.isNotEmpty()) {
-                    val history = chatHistories.getOrPut(chatId) { mutableListOf() }
-
-                    history.add(ChatMessage(role = "assistant", content = fullContentMessage))
-                    while (history.size > MAX_HISTORY_LENGTH) {
-                        history.removeAt(0)
-                    }
+                    val assistantHistMessage = ChatMessage(role = "assistant", content = fullContentMessage)
+                    addToHistory(chatId, assistantHistMessage)
                 }
 
-                activeJobs.remove(chatId)
+                chatJobs.remove(chatId)
 
                 log.info("Responding to ${update.message.from.userName} completed " +
                         "(${System.currentTimeMillis() - startMillis}ms) " +
@@ -232,7 +237,14 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             }
         }
 
-        activeJobs[chatId] = newJob
+        chatJobs[chatId] = newJob
+    }
+
+    private fun addToHistory(chatId: String, message: ChatMessage) {
+        chatHistories.getOrPut(chatId) { LinkedBlockingDeque() }.apply {
+            addLast(message)
+            while (size > MAX_HISTORY_LENGTH) removeFirst()
+        }
     }
 
     private fun handleCallbackQuery(update: Update) {
@@ -241,7 +253,9 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         val callbackId = callback.id
 
         when (callback.data) {
-            CALLBACK_DATA_FORCE_STOP -> forceStop(chatId, callbackId)
+            CALLBACK_DATA_FORCE_STOP -> {
+                forceStop(chatId, callbackId)
+            }
             CALLBACK_DATA_CLEAR_HISTORY -> {
                 forceStop(chatId, callbackId)
                 clearHistory(chatId, callbackId)
@@ -250,11 +264,14 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     }
 
     private fun forceStop(chatId: String, callbackId: String) {
-        val job = activeJobs[chatId]
+        val job = chatJobs[chatId]
+        val scope = chatScopes[chatId]
 
         try {
-            if (job != null && job.isActive) {
+            if (job != null) {
                 job.cancel(CancellationException("User requested stop"))
+                scope?.cancel()
+
                 execute(
                     AnswerCallbackQuery.builder()
                         .callbackQueryId(callbackId)
