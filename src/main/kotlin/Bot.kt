@@ -38,6 +38,9 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         private const val MESSAGE_THE_SAME_ERROR_MESSAGE = "message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"
 
         private const val MAX_HISTORY_LENGTH = 10
+
+        private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
+        private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
     }
 
     private val log: org.slf4j.Logger = LoggerFactory.getLogger(javaClass)
@@ -227,41 +230,81 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
     private fun handleCallbackQuery(update: Update) {
         val callback = update.callbackQuery
-        if (callback.data == "FORCE_STOP") {
-            val chatId = callback.message.chatId.toString()
-            val job = activeJobs[chatId]
+        val chatId = callback.message.chatId.toString()
+        val callbackId = callback.id
 
-            try {
-                if (job != null && job.isActive) {
-                    job.cancel(CancellationException("User requested stop"))
-                    execute(
-                        AnswerCallbackQuery.builder()
-                            .callbackQueryId(callback.id)
-                            .text("Остановился!")
-                            .build()
-                    )
-                } else {
-                    execute(
-                        AnswerCallbackQuery.builder()
-                            .callbackQueryId(callback.id)
-                            .text("Нечего останавливать")
-                            .build()
-                    )
-                }
-            } catch (e: TelegramApiException) {
-                e.printStackTrace()
+        when (callback.data) {
+            CALLBACK_DATA_FORCE_STOP -> forceStop(chatId, callbackId)
+            CALLBACK_DATA_CLEAR_HISTORY -> {
+                forceStop(chatId, callbackId)
+                clearHistory(chatId, callbackId)
             }
         }
     }
 
-    private fun createForceStopKeyboard(): InlineKeyboardMarkup {
+    private fun forceStop(chatId: String, callbackId: String) {
+        val job = activeJobs[chatId]
+
+        try {
+            if (job != null && job.isActive) {
+                job.cancel(CancellationException("User requested stop"))
+                execute(
+                    AnswerCallbackQuery.builder()
+                        .callbackQueryId(callbackId)
+                        .text("Остановился!")
+                        .build()
+                )
+            } else {
+                execute(
+                    AnswerCallbackQuery.builder()
+                        .callbackQueryId(callbackId)
+                        .text("Нечего останавливать")
+                        .build()
+                )
+            }
+        } catch (e: TelegramApiException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun clearHistory(chatId: String, callbackId: String) {
+        // Clear the chat history
+        chatHistories.remove(chatId)
+
+        // Send confirmation to the user
+        execute(
+            AnswerCallbackQuery.builder()
+                .callbackQueryId(callbackId)
+                .text("History cleared!")
+                .build()
+        )
+
+        // Optionally, send a message to the chat confirming the history is cleared
+        try {
+            execute(
+                SendMessage.builder()
+                    .chatId(chatId)
+                    .text("Бот забыл историю! Давай по новой Миша")
+                    .replyMarkup(createControlKeyboard())
+                    .build()
+            )
+        } catch (e: TelegramApiException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun createControlKeyboard(): InlineKeyboardMarkup {
         return InlineKeyboardMarkup.builder()
             .keyboard(
                 listOf(
                     listOf(
                         InlineKeyboardButton.builder()
-                            .text("🚫 Force Stop")
-                            .callbackData("FORCE_STOP")
+                            .text("🚫 Остановись")
+                            .callbackData(CALLBACK_DATA_FORCE_STOP)
+                            .build(),
+                        InlineKeyboardButton.builder()
+                            .text("🧹 Забудь все")
+                            .callbackData(CALLBACK_DATA_CLEAR_HISTORY)
                             .build()
                     )
                 )
@@ -277,6 +320,8 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         message: String,
         existingMessageId: Int?
     ): Int? {
+        if (message.isEmpty()) return existingMessageId
+
         try {
             if (existingMessageId == null) {
                 val newMessage = botMessage(chatId, message)
@@ -306,7 +351,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             .messageId(messageId)
             .text(message)
             .parseMode("Markdown")
-            .replyMarkup(createForceStopKeyboard())
+            .replyMarkup(createControlKeyboard())
             .build()
     }
 
