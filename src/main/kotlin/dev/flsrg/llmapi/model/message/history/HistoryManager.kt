@@ -24,4 +24,8 @@ class HistoryManager {
     fun clearHistory(chatId: String) {
         chatHistories.remove(chatId)
     }
+
+    fun removeLast(chatId: String) {
+        chatHistories[chatId]?.removeLast()
+    }
 }

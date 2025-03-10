@@ -37,9 +37,11 @@ class MessageProcessor {
                 val isReasoning = !delta.reasoning.isNullOrEmpty()
                 val isResponding = !delta.content.isNullOrEmpty()
 
+                if (!isReasoning && !isResponding) return@apply
+
                 if (isReasoning) {
                     buffer.append(delta.reasoning)
-                } else if (isResponding) {
+                } else {
                     buffer.append(delta.content)
                 }
 
@@ -65,7 +67,7 @@ class MessageProcessor {
                             existingMessageId = reasoningMessageId,
                             keyboardMarkup = keyboardMarkup
                         )
-                    } else if (isResponding) {
+                    } else {
                         contentBuffer.append(buffer.toString())
                         val contentMessage = contentBuffer.toString()
 
@@ -102,15 +104,6 @@ class MessageProcessor {
             fullContentBuffer.append(contentMessage)
             bot.updateOrSendMessage(chatId, contentMessage, contentMessageId, keyboardMarkup)
         }
-    }
-
-    fun clear() {
-        buffer.clear()
-        reasoningBuffer.clear()
-        contentBuffer.clear()
-        fullContentBuffer.clear()
-        contentMessageId = null
-        reasoningMessageId = null
     }
 
     /**

@@ -9,7 +9,6 @@ import dev.flsrg.llmapi.repository.OpenRouterRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
-import org.slf4j.LoggerFactory
 
 class OpenRouterClient(apiKey: String, model: Config.Model): Client(apiKey, model) {
     private val api = OpenRouterApi()
@@ -35,9 +34,16 @@ class OpenRouterClient(apiKey: String, model: Config.Model): Client(apiKey, mode
         }.onCompletion {
             if (rememberHistory) {
                 val assistantMessage = ChatMessage(role = "assistant", content = contentBuffer.toString())
+                if (assistantMessage.content.isEmpty()) {
+                    histManager.removeLast(chatId)
+                    throw ExceptionEmptyResponse()
+                }
+
                 histManager.addMessage(chatId, assistantMessage)
                 contentBuffer.clear()
             }
         }
     }
+
+    class ExceptionEmptyResponse() : Exception("Empty response")
 }

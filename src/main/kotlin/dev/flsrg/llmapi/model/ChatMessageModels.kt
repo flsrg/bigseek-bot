@@ -20,6 +20,7 @@ data class ChatRequest(
 
 @Serializable
 data class ChatResponse(
+    val provider: String,
     val choices: List<StreamChoice>,
 )
 

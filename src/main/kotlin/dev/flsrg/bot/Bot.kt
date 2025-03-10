@@ -90,6 +90,8 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                     .onCompletion {
                         messageProcessor.finishMessage(this@Bot, chatId, keyboardMarkup)
                     }.collect { response ->
+                        if (!isActive) return@collect
+
                         messageProcessor.processStream(
                             bot = this@Bot,
                             chatId = chatId,
@@ -102,8 +104,15 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                     }
 
             } catch (e: Exception) {
-                execute(botMessage(chatId, "error: ${e.message}"))
-                log.error("Error processing message", e)
+                // Repeat
+                if (e is OpenRouterClient.ExceptionEmptyResponse) {
+                    handleMessage(update)
+                    chatJobs.remove(chatId)
+                    log.error("Error processing message ${e.message} repeat")
+                } else {
+                    execute(botMessage(chatId, "error: ${e.message}"))
+                    log.error("Error processing message", e)
+                }
 
             } finally {
                 chatJobs.remove(chatId)
@@ -138,12 +147,10 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
     private fun forceStop(chatId: String, callbackId: String) {
         val job = chatJobs[chatId]
-        val scope = chatScopes[chatId]
 
         try {
             if (job != null) {
                 job.cancel(CancellationException("User requested stop"))
-                scope?.cancel()
 
                 execute(
                     AnswerCallbackQuery.builder()

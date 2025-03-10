@@ -37,8 +37,7 @@ class OpenRouterRepository(private val api: Api): Repository {
                 val isScopeActive = currentCoroutineContext().isActive
 
                 while (!channel.isClosedForRead && isScopeActive) {
-                    val line = channel.readUTF8Line()
-                    if (line == null) break
+                    val line = channel.readUTF8Line() ?: break
 
                     if (line.startsWith("data: ")) {
                         val json = line.removePrefix("data: ").trim()
