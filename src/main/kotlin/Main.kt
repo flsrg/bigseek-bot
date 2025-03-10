@@ -1,7 +1,10 @@
 package dev.flsrg
 
+import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.TelegramBotsApi
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession
+
+private val log = LoggerFactory.getLogger("Main")
 
 fun main() {
     // TODO: Replace it to the app.properties file
@@ -9,4 +12,6 @@ fun main() {
 
     TelegramBotsApi(DefaultBotSession::class.java)
         .registerBot(Bot(TOKEN))
+
+    log.info("Bot started (version: ${BotConfig.getBotVersion()}")
 }

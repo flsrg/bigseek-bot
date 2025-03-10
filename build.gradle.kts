@@ -3,8 +3,9 @@ plugins {
     kotlin("plugin.serialization") version "1.9.22"
 }
 
-group = "dev.flsrg"
-version = "1.0-SNAPSHOT"
+group = project.properties["projectGroup"] as String
+version = project.properties["projectVersion"] as String
+
 val ktor_version = "3.1.0"
 
 repositories {
@@ -33,4 +34,22 @@ tasks.test {
 }
 kotlin {
     jvmToolchain(21)
+}
+
+tasks.withType<Jar> {
+    manifest {
+        attributes(
+            "Main-Class" to "dev.flsrg.MainKt",
+            "Implementation-Title" to project.name,
+            "Implementation-Version" to project.version
+        )
+    }
+    // Include dependencies in the JAR
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+}
+
+tasks.processResources {
+    filesMatching("version.properties") {
+        expand(project.properties)
+    }
 }
