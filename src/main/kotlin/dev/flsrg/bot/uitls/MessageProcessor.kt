@@ -130,10 +130,8 @@ class MessageProcessor {
 
         } catch (exception: TelegramApiRequestException) {
             if (exception.message?.contains(MARKDOWN_PARSE_ERROR_MESSAGE) == true) {
-                log.error("Markdown parse error, skip message")
                 return existingMessageId
             } else if (exception.message?.contains(MESSAGE_THE_SAME_ERROR_MESSAGE) == true) {
-                log.error("Message the same error, skip message")
                 return existingMessageId
             }
             else throw exception
