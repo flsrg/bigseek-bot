@@ -30,3 +30,8 @@ $Env:OPENROUTER_API_KEY="openrouter_token_here"
 - IDE Setup:
 
   In IntelliJ IDEA or Eclipse, add the environment variable in your Run/Debug configuration.
+
+# To build JAR
+```declarative
+./gradlew shadowJar
+```
