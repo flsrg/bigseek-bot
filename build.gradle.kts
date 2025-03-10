@@ -37,6 +37,8 @@ kotlin {
 }
 
 tasks.withType<Jar> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
     manifest {
         attributes(
             "Main-Class" to "dev.flsrg.bot.MainKt",

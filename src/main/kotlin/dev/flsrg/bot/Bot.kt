@@ -79,12 +79,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             try {
                 val messageProcessor = MessageProcessor()
 
-                log.debug(
-                    "{} asked: {} \n hist: {}",
-                    update.message.from.id,
-                    userMessage,
-                    openRouterDeepseekClient.getHistory(chatId).joinToString("\n")
-                )
+                log.debug("{} asked: {}", update.message.from.id, userMessage)
 
                 openRouterDeepseekClient.askChat(chatId, userMessage)
                     .onCompletion {
