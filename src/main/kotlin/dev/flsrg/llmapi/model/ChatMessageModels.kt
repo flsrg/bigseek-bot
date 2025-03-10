@@ -1,4 +1,4 @@
-package dev.flsrg.model
+package dev.flsrg.llmapi.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

@@ -39,7 +39,7 @@ kotlin {
 tasks.withType<Jar> {
     manifest {
         attributes(
-            "Main-Class" to "dev.flsrg.MainKt",
+            "Main-Class" to "dev.flsrg.bot.MainKt",
             "Implementation-Title" to project.name,
             "Implementation-Version" to project.version
         )
