@@ -2,8 +2,8 @@ package dev.flsrg.bot
 
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.MessageProcessor
-import dev.flsrg.llmapi.Config
 import dev.flsrg.llmapi.client.OpenRouterClient
+import dev.flsrg.llmapi.client.OpenRouterDeepseekConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.future.await
@@ -35,7 +35,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val chatJobs = ConcurrentHashMap<String, Job>()
 
-    private val openRouterDeepseekClient = OpenRouterClient(API_KEY, Config.Model.DEEPSEEK_R1)
+    private val openRouterDeepseekClient = OpenRouterClient(OpenRouterDeepseekConfig(apiKey = API_KEY))
 
     private val keyboardMarkup by lazy { createControlKeyboard() }
 

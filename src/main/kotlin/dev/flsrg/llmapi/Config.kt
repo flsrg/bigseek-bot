@@ -12,14 +12,13 @@ import kotlinx.serialization.json.Json
 
 object Config {
     const val API_CONNECTION_TIMEOUT_MS = 10 * 60 * 1000L
-    const val MAX_CHAT_HISTORY_LENGTH = 20
 
     val format = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
-    val client = HttpClient(CIO) {
+    val sreamingClient = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(format)
         }

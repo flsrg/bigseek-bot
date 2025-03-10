@@ -2,8 +2,8 @@ package dev.flsrg.llmapi.repository
 
 import dev.flsrg.llmapi.Config
 import dev.flsrg.llmapi.api.Api
+import dev.flsrg.llmapi.client.ClientConfig
 import dev.flsrg.llmapi.model.ChatMessage
-import dev.flsrg.llmapi.model.ChatRequest
 import dev.flsrg.llmapi.model.ChatResponse
 import io.ktor.client.statement.*
 import io.ktor.utils.io.*
@@ -16,21 +16,9 @@ import org.slf4j.LoggerFactory
 class OpenRouterRepository(private val api: Api): Repository {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    override fun getCompletionsStream(
-        apiKey: String,
-        model: Config.Model,
-        chatMessages: List<ChatMessage>
-    ): Flow<ChatResponse> {
-
-        val payload = ChatRequest(
-            model = model.id,
-            chainOfThought = true,
-            messages = chatMessages.toList(),
-            stream = true
-        )
-
+    override fun getCompletionsStream(config: ClientConfig, chatMessages: List<ChatMessage>): Flow<ChatResponse> {
         return flow<ChatResponse> {
-            api.getCompletionsStream(apiKey, requestPayload = payload).collect { response ->
+            api.getCompletionsStream(config, chatMessages).collect { response ->
                 log.debug("Received API response (code={})", response.status.value)
 
                 val channel: ByteReadChannel = response.bodyAsChannel()

@@ -1,11 +1,11 @@
 package dev.flsrg.llmapi.model.message.history
 
-import dev.flsrg.llmapi.Config
+import dev.flsrg.llmapi.client.ClientConfig
 import dev.flsrg.llmapi.model.ChatMessage
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingDeque
 
-class HistoryManager {
+class HistoryManager(private val config: ClientConfig) {
     private val chatHistories = ConcurrentHashMap<String, LinkedBlockingDeque<ChatMessage>>()
 
     fun getHistory(chatId: String): List<ChatMessage> {
@@ -17,7 +17,7 @@ class HistoryManager {
             .getOrPut(chatId) { LinkedBlockingDeque() }
             .apply {
                 addLast(message)
-                while (size > Config.MAX_CHAT_HISTORY_LENGTH) removeFirst()
+                while (size > config.maxHistoryLength) removeFirst()
             }
     }
 
