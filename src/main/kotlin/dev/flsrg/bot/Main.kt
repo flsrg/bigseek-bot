@@ -7,11 +7,10 @@ import org.telegram.telegrambots.updatesreceivers.DefaultBotSession
 private val log = LoggerFactory.getLogger("Main")
 
 fun main() {
-    // TODO: Replace it to the System env variable
-    val TOKEN = "7531676551:AAFpOkvi_iSIMNMRrzNOPrK_0OdaVg58Pro"
+    val token = System.getenv("BIG_SEEK_BOT_TOKEN")!!
 
     TelegramBotsApi(DefaultBotSession::class.java)
-        .registerBot(Bot(TOKEN))
+        .registerBot(Bot(token))
 
     log.info("Bot started (version: ${BotConfig.getBotVersion()})")
 }

@@ -20,14 +20,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     companion object {
-        //TODO: Move to system environment
-        private const  val API_KEY = "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"
-
         private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
         private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
 
         private const val START_DEFAULT_COMMAND = "/start"
     }
+
+    private val apiKey = System.getenv("OPENROUTER_API_KEY")!!
 
     private val log: Logger = LoggerFactory.getLogger(javaClass)
 
@@ -35,7 +34,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val chatJobs = ConcurrentHashMap<String, Job>()
 
-    private val openRouterDeepseekClient = OpenRouterClient(OpenRouterDeepseekConfig(apiKey = API_KEY))
+    private val openRouterDeepseekClient = OpenRouterClient(OpenRouterDeepseekConfig(apiKey = apiKey))
 
     private val keyboardMarkup by lazy { createControlKeyboard() }
 
