@@ -3,3 +3,5 @@ plugins {
 }
 rootProject.name = "BigSeekBot"
 
+include(":llm-polling-client")
+project(":llm-polling-client").projectDir = file("libs/llm-polling-client")

@@ -2,8 +2,8 @@ package dev.flsrg.bot
 
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.MessageProcessor
-import dev.flsrg.llmapi.client.OpenRouterClient
-import dev.flsrg.llmapi.client.OpenRouterDeepseekConfig
+import dev.flsrg.llmpollingclient.client.OpenRouterClient
+import dev.flsrg.llmpollingclient.client.OpenRouterDeepseekConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.future.await
