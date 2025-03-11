@@ -10,21 +10,22 @@ object BotUtils {
         chatId: String, messageId: Int,
         message: String,
         keyboardMarkup: InlineKeyboardMarkup? = null,
+        parseMode: String? = "Markdown",
     ): EditMessageText {
         return EditMessageText.builder()
             .chatId(chatId)
             .messageId(messageId)
             .text(message)
-            .parseMode("Markdown")
+            .parseMode(parseMode)
             .replyMarkup(keyboardMarkup)
             .build()
     }
 
-    fun Bot.botMessage(chatId: String, message: String): SendMessage {
+    fun Bot.botMessage(chatId: String, message: String, parseMode: String? = "Markdown"): SendMessage {
         return SendMessage.builder()
             .chatId(chatId)
             .text(message)
-            .parseMode("Markdown")
+            .parseMode(parseMode)
             .build()
     }
 }

@@ -6,6 +6,8 @@ import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import dev.flsrg.llmpollingclient.client.OpenRouterDeepseekConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.future.await
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -36,7 +38,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
     private val openRouterDeepseekClient = OpenRouterClient(OpenRouterDeepseekConfig(apiKey = apiKey))
 
-    private val keyboardMarkup by lazy { createControlKeyboard() }
+    private val inlineKeyboardMarkup by lazy { createControlKeyboard() }
 
     override fun getBotUsername() = "Bigdick"
 
@@ -76,25 +78,21 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             log.info("Responding to ${update.message.from.userName}")
 
             try {
-                val messageProcessor = MessageProcessor()
+                val messageProcessor = MessageProcessor(this@Bot, chatId, inlineKeyboardMarkup)
 
                 log.debug("{} asked: {}", update.message.from.id, userMessage)
 
                 openRouterDeepseekClient.askChat(chatId, userMessage)
-                    .onCompletion {
-                        messageProcessor.finishMessage(this@Bot, chatId, keyboardMarkup)
-                    }.collect { response ->
-                        if (!isActive) return@collect
-
-                        messageProcessor.processStream(
-                            bot = this@Bot,
-                            chatId = chatId,
-                            chatResponse = response,
-                            keyboardMarkup = keyboardMarkup,
-                        )
-
-                        reasoningSize += response.choices.firstOrNull()?.delta?.reasoning?.length ?: 0
-                        contentSize += response.choices.firstOrNull()?.delta?.content?.length ?: 0
+                    .onEach { message ->
+                        messageProcessor.processMessage(message)
+                    }
+                    .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
+                    .onCompletion { exception ->
+                        if (exception != null) throw exception
+                        messageProcessor.updateOrSend()
+                    }
+                    .collect {
+                        messageProcessor.updateOrSend()
                     }
 
             } catch (e: Exception) {

@@ -9,100 +9,80 @@ import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 
-class MessageProcessor {
+class MessageProcessor(
+    private val bot: Bot,
+    private val chatId: String,
+    private val inlineKeyboardMarkup: InlineKeyboardMarkup
+) {
     companion object {
-        private const val MARKDOWN_PARSE_ERROR_MESSAGE = "can't parse entities: Can't find end of the entity starting at byte offset"
+        private const val MARKDOWN_PARSE_ERROR_MESSAGE = "can't parse entities: "
         private const val MESSAGE_THE_SAME_ERROR_MESSAGE = "message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"
     }
 
     private val log = LoggerFactory.getLogger(javaClass)
 
-    val buffer = StringBuilder()
     val contentBuffer = StringBuilder()
     val reasoningBuffer = StringBuilder()
-    val fullContentBuffer = StringBuilder()
     var contentMessageId: Int? = null
     var reasoningMessageId: Int? = null
 
-    fun processStream(
-        bot: Bot,
-        chatId: String,
-        chatResponse: ChatResponse,
-        keyboardMarkup: InlineKeyboardMarkup
-    ) = bot.apply {
+    fun processMessage(message: ChatResponse) = bot.apply {
         try {
-            val delta = chatResponse.choices.firstOrNull()?.delta
+            val delta = message.choices.firstOrNull()?.delta ?: return@apply
 
-            if (delta != null) {
-                val isReasoning = !delta.reasoning.isNullOrEmpty()
-                val isResponding = !delta.content.isNullOrEmpty()
+            val isReasoning = !delta.reasoning.isNullOrEmpty()
+            val isResponding = !delta.content.isNullOrEmpty()
+            if (!isReasoning && !isResponding) return@apply
 
-                if (!isReasoning && !isResponding) return@apply
-
-                if (isReasoning) {
-                    buffer.append(delta.reasoning)
-                } else {
-                    buffer.append(delta.content)
-                }
-
-                val isParagraph = if (isReasoning) {
-                    delta.reasoning!!.contains("\n")
-                } else {
-                    delta.content?.contains("\n") == true
-                }
-
-                if (isParagraph) {
-                    if (isReasoning) {
-                        reasoningBuffer.append(buffer.toString())
-                        val reasoningMessage = reasoningBuffer.toString()
-
-                        if (reasoningBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
-                            reasoningMessageId = null
-                            reasoningBuffer.clear()
-                        }
-
-                        reasoningMessageId = updateOrSendMessage(
-                            chatId = chatId,
-                            message = reasoningMessage,
-                            existingMessageId = reasoningMessageId,
-                            keyboardMarkup = keyboardMarkup
-                        )
-                    } else {
-                        contentBuffer.append(buffer.toString())
-                        val contentMessage = contentBuffer.toString()
-
-                        fullContentBuffer.append(contentMessage)
-
-                        if (contentBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
-                            contentMessageId = null
-                            contentBuffer.clear()
-                        }
-
-                        contentMessageId = updateOrSendMessage(
-                            chatId = chatId,
-                            message = contentMessage,
-                            existingMessageId = contentMessageId,
-                            keyboardMarkup = keyboardMarkup
-                        )
-                    }
-
-                    buffer.clear()
-                }
+            if (isReasoning) {
+                reasoningBuffer.append(delta.reasoning!!)
+            } else {
+                contentBuffer.append(delta.content!!)
             }
+
+            if (reasoningBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
+                updateOrSendMessage(
+                    message = reasoningBuffer.toString(),
+                    existingMessageId = reasoningMessageId,
+                    parseMode = null
+                )
+                reasoningBuffer.clear()
+                reasoningMessageId = null
+            }
+
+            if (contentBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
+                updateOrSendMessage(
+                    message = contentBuffer.toString(),
+                    existingMessageId = contentMessageId
+                )
+                contentBuffer.clear()
+                contentMessageId = null
+            }
+
         } catch (exception: Exception) {
             log.error("error: ${exception.message}" +
                     "\n Response (reasoning = $reasoningBuffer, content = $contentBuffer)")
             throw exception
-
         }
     }
 
-    fun finishMessage(bot: Bot, chatId: String, keyboardMarkup: InlineKeyboardMarkup) {
-        if (buffer.isNotEmpty()) {
-            contentBuffer.append(buffer.toString())
-            val contentMessage = contentBuffer.toString()
-            fullContentBuffer.append(contentMessage)
-            bot.updateOrSendMessage(chatId, contentMessage, contentMessageId, keyboardMarkup)
+    fun updateOrSend() = bot.apply {
+        if (contentBuffer.isNotEmpty()) {
+            contentMessageId = updateOrSendMessage(
+                message = contentBuffer.toString(),
+                existingMessageId = contentMessageId,
+                inlineKeyboardMarkup = inlineKeyboardMarkup,
+            )
+
+            reasoningBuffer.clear()
+
+        } else if (reasoningBuffer.isNotEmpty()) {
+            reasoningMessageId = updateOrSendMessage(
+                message = reasoningBuffer.toString(),
+                existingMessageId = reasoningMessageId,
+                parseMode = null,
+                inlineKeyboardMarkup = inlineKeyboardMarkup,
+            )
         }
     }
 
@@ -110,31 +90,39 @@ class MessageProcessor {
      * @return existing active editable message id
      */
     private fun Bot.updateOrSendMessage(
-        chatId: String,
         message: String,
         existingMessageId: Int?,
-        keyboardMarkup: InlineKeyboardMarkup,
+        parseMode: String? = "Markdown",
+        inlineKeyboardMarkup: InlineKeyboardMarkup? = null,
     ): Int? {
         if (message.isEmpty()) return existingMessageId
 
         try {
             if (existingMessageId == null) {
-                val newMessage = botMessage(chatId, message)
+                val newMessage = botMessage(chatId, message, parseMode)
                 return execute(newMessage).messageId
-            } else {
-                val editMessage = editMessage(chatId, existingMessageId, message, keyboardMarkup)
-                execute(editMessage)
 
+            } else {
+                val editMessage = editMessage(
+                    chatId = chatId,
+                    messageId = existingMessageId,
+                    message = message,
+                    keyboardMarkup = inlineKeyboardMarkup,
+                    parseMode = parseMode
+                )
+
+                execute(editMessage)
                 return existingMessageId
             }
 
         } catch (exception: TelegramApiRequestException) {
-            if (exception.message?.contains(MARKDOWN_PARSE_ERROR_MESSAGE) == true) {
-                return existingMessageId
+            return if (exception.message?.contains(MARKDOWN_PARSE_ERROR_MESSAGE) == true) {
+                // Retry without markdown
+                log.info("Markdown parse error: $exception")
+                updateOrSendMessage(message, existingMessageId, null, inlineKeyboardMarkup)
             } else if (exception.message?.contains(MESSAGE_THE_SAME_ERROR_MESSAGE) == true) {
-                return existingMessageId
-            }
-            else throw exception
+                existingMessageId
+            } else throw exception
         }
     }
 }
