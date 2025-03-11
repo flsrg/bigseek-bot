@@ -118,7 +118,6 @@ class MessageProcessor(
         } catch (exception: TelegramApiRequestException) {
             return if (exception.message?.contains(MARKDOWN_PARSE_ERROR_MESSAGE) == true) {
                 // Retry without markdown
-                log.info("Markdown parse error: $exception")
                 updateOrSendMessage(message, existingMessageId, null, inlineKeyboardMarkup)
             } else if (exception.message?.contains(MESSAGE_THE_SAME_ERROR_MESSAGE) == true) {
                 existingMessageId
