@@ -6,6 +6,7 @@ import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.editMessage
 import dev.flsrg.llmpollingclient.client.OpenRouterClient.ChatResponse
 import org.slf4j.LoggerFactory
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessages
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 
@@ -20,7 +21,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     val contentBuffer = StringBuilder()
     val reasoningBuffer = StringBuilder()
     var contentMessageId: Int? = null
-    var reasoningMessageId: Int? = null
+    val reasoningMessageIds = mutableSetOf<Int?>()
 
     fun processMessage(message: ChatResponse) = bot.apply {
         try {
@@ -39,11 +40,11 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
             if (reasoningBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
                 updateOrSendMessage(
                     message = reasoningBuffer.toString(),
-                    existingMessageId = reasoningMessageId,
+                    existingMessageId = reasoningMessageIds.lastOrNull(),
                     parseMode = null
                 )
                 reasoningBuffer.clear()
-                reasoningMessageId = null
+                reasoningMessageIds.add(null)
             }
 
             if (contentBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
@@ -64,21 +65,27 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
 
     fun updateOrSend(vararg buttons: BotUtils.ControlKeyboardButton) = bot.apply {
         if (contentBuffer.isNotEmpty()) {
+            reasoningBuffer.clear()
+            if (reasoningMessageIds.isNotEmpty()) {
+                deleteAllReasoningMessages(reasoningMessageIds)
+                reasoningMessageIds.clear()
+                execute(botMessage(chatId, "Подумал, получается:"))
+            }
+
             contentMessageId = updateOrSendMessage(
                 message = contentBuffer.toString(),
                 existingMessageId = contentMessageId,
                 keyboardButtons = buttons,
             )
 
-            reasoningBuffer.clear()
-
         } else if (reasoningBuffer.isNotEmpty()) {
-            reasoningMessageId = updateOrSendMessage(
+            val reasoningMessageId = updateOrSendMessage(
                 message = reasoningBuffer.toString(),
-                existingMessageId = reasoningMessageId,
+                existingMessageId = reasoningMessageIds.lastOrNull(),
                 parseMode = null,
                 keyboardButtons = buttons,
             )
+            reasoningMessageIds.add(reasoningMessageId)
         }
     }
 
@@ -125,5 +132,14 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         return InlineKeyboardMarkup.builder()
             .keyboard(listOf(buttons))
             .build()
+    }
+
+    private fun deleteAllReasoningMessages(reasoningMessageIds: Set<Int?>) {
+        bot.execute(
+            DeleteMessages.builder()
+                .chatId(chatId)
+                .messageIds(reasoningMessageIds.mapNotNull { it })
+                .build()
+        )
     }
 }
