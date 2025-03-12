@@ -9,11 +9,7 @@ import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 
-class MessageProcessor(
-    private val bot: Bot,
-    private val chatId: String,
-    private val inlineKeyboardMarkup: InlineKeyboardMarkup
-) {
+class MessageProcessor(private val bot: Bot, private val chatId: String) {
     companion object {
         private const val MARKDOWN_PARSE_ERROR_MESSAGE = "can't parse entities: "
         private const val MESSAGE_THE_SAME_ERROR_MESSAGE = "message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message"
@@ -66,12 +62,12 @@ class MessageProcessor(
         }
     }
 
-    fun updateOrSend() = bot.apply {
+    fun updateOrSend(vararg buttons: BotUtils.ControlKeyboardButton) = bot.apply {
         if (contentBuffer.isNotEmpty()) {
             contentMessageId = updateOrSendMessage(
                 message = contentBuffer.toString(),
                 existingMessageId = contentMessageId,
-                inlineKeyboardMarkup = inlineKeyboardMarkup,
+                keyboardButtons = buttons,
             )
 
             reasoningBuffer.clear()
@@ -81,7 +77,7 @@ class MessageProcessor(
                 message = reasoningBuffer.toString(),
                 existingMessageId = reasoningMessageId,
                 parseMode = null,
-                inlineKeyboardMarkup = inlineKeyboardMarkup,
+                keyboardButtons = buttons,
             )
         }
     }
@@ -93,10 +89,9 @@ class MessageProcessor(
         message: String,
         existingMessageId: Int?,
         parseMode: String? = "Markdown",
-        inlineKeyboardMarkup: InlineKeyboardMarkup? = null,
+        vararg keyboardButtons: BotUtils.ControlKeyboardButton,
     ): Int? {
         if (message.isEmpty()) return existingMessageId
-
         try {
             if (existingMessageId == null) {
                 val newMessage = botMessage(chatId, message, parseMode)
@@ -107,7 +102,7 @@ class MessageProcessor(
                     chatId = chatId,
                     messageId = existingMessageId,
                     message = message,
-                    keyboardMarkup = inlineKeyboardMarkup,
+                    keyboardMarkup = createControlKeyboard(keyboardButtons.toList()),
                     parseMode = parseMode
                 )
 
@@ -118,10 +113,17 @@ class MessageProcessor(
         } catch (exception: TelegramApiRequestException) {
             return if (exception.message?.contains(MARKDOWN_PARSE_ERROR_MESSAGE) == true) {
                 // Retry without markdown
-                updateOrSendMessage(message, existingMessageId, null, inlineKeyboardMarkup)
+                updateOrSendMessage(message, existingMessageId, null, *keyboardButtons)
             } else if (exception.message?.contains(MESSAGE_THE_SAME_ERROR_MESSAGE) == true) {
                 existingMessageId
             } else throw exception
         }
+    }
+
+
+    private fun createControlKeyboard(buttons: List<BotUtils.ControlKeyboardButton>): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.builder()
+            .keyboard(listOf(buttons))
+            .build()
     }
 }

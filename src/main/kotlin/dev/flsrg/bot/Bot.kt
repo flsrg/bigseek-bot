@@ -1,5 +1,7 @@
 package dev.flsrg.bot
 
+import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupClearHistory
+import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupStop
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.MessageProcessor
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
@@ -15,8 +17,6 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.objects.Update
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 import java.util.concurrent.ConcurrentHashMap
 
@@ -37,9 +37,6 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     private val chatJobs = ConcurrentHashMap<String, Job>()
 
     private val openRouterDeepseekClient = OpenRouterClient(OpenRouterDeepseekConfig(apiKey = apiKey))
-
-    private val inlineKeyboardMarkup by lazy { createControlKeyboard() }
-
     override fun getBotUsername() = "Bigdick"
 
     override fun onRegister() {
@@ -78,7 +75,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             log.info("Responding to ${update.message.from.userName}")
 
             try {
-                val messageProcessor = MessageProcessor(this@Bot, chatId, inlineKeyboardMarkup)
+                val messageProcessor = MessageProcessor(this@Bot, chatId)
 
                 log.debug("{} asked: {}", update.message.from.id, userMessage)
 
@@ -89,10 +86,10 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                     .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
                     .onCompletion { exception ->
                         if (exception != null) throw exception
-                        messageProcessor.updateOrSend()
+                        messageProcessor.updateOrSend(KeyboardMarkupClearHistory())
                     }
                     .collect {
-                        messageProcessor.updateOrSend()
+                        messageProcessor.updateOrSend(KeyboardMarkupStop(), KeyboardMarkupClearHistory())
                     }
 
             } catch (e: Exception) {
@@ -181,30 +178,10 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                 SendMessage.builder()
                     .chatId(chatId)
                     .text("Бот забыл историю! Давай по новой Миша")
-                    .replyMarkup(createControlKeyboard())
                     .build()
             )
         } catch (e: TelegramApiException) {
             e.printStackTrace()
         }
-    }
-
-    private fun createControlKeyboard(): InlineKeyboardMarkup {
-        return InlineKeyboardMarkup.builder()
-            .keyboard(
-                listOf(
-                    listOf(
-                        InlineKeyboardButton.builder()
-                            .text("🚫 Остановись")
-                            .callbackData(CALLBACK_DATA_FORCE_STOP)
-                            .build(),
-                        InlineKeyboardButton.builder()
-                            .text("🧹 Забудь все")
-                            .callbackData(CALLBACK_DATA_CLEAR_HISTORY)
-                            .build()
-                    )
-                )
-            )
-            .build()
     }
 }
