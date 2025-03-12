@@ -4,7 +4,7 @@ import dev.flsrg.bot.Bot
 import dev.flsrg.bot.BotConfig
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.editMessage
-import dev.flsrg.llmpollingclient.model.ChatResponse
+import dev.flsrg.llmpollingclient.client.OpenRouterClient.ChatResponse
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
