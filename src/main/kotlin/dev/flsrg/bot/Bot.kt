@@ -96,7 +96,6 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
                 // Repeat
                 if (e is OpenRouterClient.ExceptionEmptyResponse) {
                     handleMessage(update)
-                    chatJobs.remove(chatId)
                     log.error("Error processing message ${e.message} repeat")
                 } else {
                     execute(botMessage(chatId, "error: ${e.message}"))
