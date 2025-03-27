@@ -3,6 +3,7 @@ package dev.flsrg.bot
 import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupClearHistory
 import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupStop
 import dev.flsrg.bot.uitls.BotUtils.botMessage
+import dev.flsrg.bot.uitls.BotUtils.withRetry
 import dev.flsrg.bot.uitls.MessageProcessor
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import dev.flsrg.llmpollingclient.client.OpenRouterDeepseekConfig
@@ -25,6 +26,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     companion object {
         private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
         private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
+        private const val STOP_MESSAGE = "User requested stop"
 
         private const val START_DEFAULT_COMMAND = "/start"
     }
@@ -83,36 +85,20 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             log.info("Responding to ${update.message.from.userName}")
 
             try {
-                val messageProcessor = MessageProcessor(this@Bot, chatId)
-
-                log.debug("{} asked: {}", update.message.from.id, userMessage)
-
-                openRouterDeepseekClient.askChat(chatId, userMessage)
-                    .onEach { message ->
-                        messageProcessor.processMessage(message)
-                    }
-                    .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
-                    .onCompletion { exception ->
-                        if (exception != null) throw exception
-                        messageProcessor.updateOrSend(KeyboardMarkupClearHistory())
-                    }
-                    .collect {
-                        messageProcessor.updateOrSend(KeyboardMarkupStop(), KeyboardMarkupClearHistory())
-                    }
-
+                withRetry(origin = "job askDeepseekR1") {
+                    askDeepseekR1(chatId, userMessage)
+                }
             } catch (e: Exception) {
-                // Repeat
-                if (e is OpenRouterClient.ExceptionEmptyResponse) {
-                    handleMessage(update)
-                    log.error("Error processing message ${e.message} repeat")
+                if (isStopException(e)) {
+                    execute(botMessage(chatId, "Стою"))
                 } else {
                     execute(botMessage(chatId, "error: ${e.message}"))
-                    log.error("Error processing message", e)
                 }
+
+                log.error("Error processing message", e)
 
             } finally {
                 chatJobs.remove(chatId)
-
                 log.info("Responding to ${update.message.from.userName} completed " +
                         "(${System.currentTimeMillis() - startMillis}ms) " +
                         "(" +
@@ -123,6 +109,23 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         }
 
         chatJobs[chatId] = newJob
+    }
+
+    private suspend fun askDeepseekR1(chatId: String, userMessage: String) {
+        val messageProcessor = MessageProcessor(this@Bot, chatId)
+
+        openRouterDeepseekClient.askChat(chatId, userMessage)
+            .onEach { message ->
+                messageProcessor.processMessage(message)
+            }
+            .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
+            .onCompletion { exception ->
+                if (exception != null) throw exception
+                messageProcessor.updateOrSend(KeyboardMarkupClearHistory())
+            }
+            .collect {
+                messageProcessor.updateOrSend(KeyboardMarkupStop(), KeyboardMarkupClearHistory())
+            }
     }
 
     private fun handleCallbackQuery(update: Update) {
@@ -146,7 +149,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
         try {
             if (job != null) {
-                job.cancel(CancellationException("User requested stop"))
+                job.cancel(CancellationException(STOP_MESSAGE))
 
                 execute(
                     AnswerCallbackQuery.builder()
@@ -165,6 +168,10 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         } catch (e: TelegramApiException) {
             e.printStackTrace()
         }
+    }
+
+    private fun isStopException(exception: Throwable): Boolean {
+        return exception is CancellationException && exception.message == STOP_MESSAGE
     }
 
     private fun clearHistory(chatId: String, callbackId: String) {
