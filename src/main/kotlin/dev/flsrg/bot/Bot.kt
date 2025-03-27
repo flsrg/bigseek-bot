@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
+import org.telegram.telegrambots.meta.api.objects.Message
 import org.telegram.telegrambots.meta.api.objects.Update
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 import java.util.concurrent.ConcurrentHashMap
@@ -45,11 +46,23 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
     override fun onUpdateReceived(update: Update) {
         rootScope.launch {
-            when {
-                update.hasMessage() && update.message.hasText() -> handleMessage(update)
-                update.hasCallbackQuery() -> handleCallbackQuery(update)
+            if (update.hasMessage() && update.message.hasText()) {
+                when {
+                    isStartMessage(update.message) -> handleStartMessage(update.message.chat.id.toString())
+                    else -> handleMessage(update)
+                }
+            } else if (update.hasCallbackQuery()) {
+                handleCallbackQuery(update)
             }
         }
+    }
+
+    private fun isStartMessage(message: Message): Boolean {
+        return message.text == START_DEFAULT_COMMAND
+    }
+
+    private fun handleStartMessage(chatId: String) {
+        execute(botMessage(chatId, "Го"))
     }
 
     private fun handleMessage(update: Update) {
@@ -59,11 +72,6 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
         val userMessage = update.message.text
         val chatId = update.message.chat.id.toString()
-
-        if (userMessage == START_DEFAULT_COMMAND || userMessage.isEmpty()) {
-            execute(botMessage(chatId, "Го"))
-            return
-        }
 
         val chatScope = chatScopes.getOrPut(chatId) {
             CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineName("Chat-$chatId"))
