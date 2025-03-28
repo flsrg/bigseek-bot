@@ -22,7 +22,7 @@ object MarkdownHelper {
         set('!'.code, true)
     }
 
-    fun formatMessage(input: String): String {
+    fun formatMessageMarkdownV2(input: String): String {
         if (input.isEmpty()) return input
 
         return buildString(capacity = input.length * 2) {

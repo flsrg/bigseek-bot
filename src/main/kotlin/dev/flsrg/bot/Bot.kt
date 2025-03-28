@@ -11,13 +11,10 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.future.await
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
-import org.telegram.telegrambots.meta.api.methods.ActionType
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
-import org.telegram.telegrambots.meta.api.methods.send.SendChatAction
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.objects.Message
 import org.telegram.telegrambots.meta.api.objects.Update
@@ -89,7 +86,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
             try {
                 withRetry(origin = "job askDeepseekR1") {
-                    messageProcessor.deleteAllReasoningMessages(bot = this@Bot)
+                    messageProcessor.deleteAllReasoningMessages()
                     askDeepseekR1(chatId, userMessage, messageProcessor)
                 }
             } catch (e: Exception) {
@@ -116,7 +113,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     }
 
     private suspend fun askDeepseekR1(chatId: String, userMessage: String, messageProcessor: MessageProcessor) {
-        openRouterDeepseekClient.askChat(chatId, userMessage)
+        openRouterDeepseekClient.askChat(chatId, message = userMessage)
             .onEach { message ->
                 messageProcessor.processMessage(message)
             }

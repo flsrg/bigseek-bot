@@ -20,85 +20,97 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     private val reasoningMessageIds = linkedSetOf<Int?>()
 
     suspend fun processMessage(message: ChatResponse) = bot.apply {
-        val delta = message.choices.firstOrNull()?.delta ?: return@apply
-
-        val isReasoning = !delta.reasoning.isNullOrEmpty()
-        val isResponding = !delta.content.isNullOrEmpty()
-        if (!isReasoning && !isResponding) return@apply
-
-        if (isReasoning) {
-            reasoningBuffer.append(delta.reasoning!!)
-        } else {
-            contentBuffer.append(delta.content!!)
+        message.choices.firstOrNull()?.delta?.let { delta ->
+            delta.reasoning?.let { handleReasoning(it) }
+            delta.content?.let { handleContent(it) }
         }
+    }
+
+    private suspend fun Bot.handleReasoning(reasoning: String) {
+        reasoningBuffer.append(reasoning)
 
         if (reasoningBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
-            updateOrSendMessage(
-                message = reasoningBuffer.toString(),
-                existingMessageId = reasoningMessageIds.lastOrNull(),
-                parseMode = null
-            )
-            reasoningBuffer.clear()
-            reasoningMessageIds.remove(null)
-            reasoningMessageIds.add(null)
+            sendReasoning(isLastMessage = true)
         }
+    }
+
+    private suspend fun Bot.handleContent(content: String) {
+        contentBuffer.append(content)
 
         if (contentBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
-            try {
-                val contentMessage = MarkdownHelper.formatMessage(contentBuffer.toString())
-                updateOrSendMessage(
-                    message = contentMessage,
-                    existingMessageId = contentMessageId
-                )
-            } catch (e: TelegramApiRequestException) {
-                if (e.errorCode != BotConfig.BAD_REQUEST_ERROR_CODE) throw e
-                log.debug("Can't send message: ${e.message}, skip")
-                // just skip sending the message
-            }
-
-            contentBuffer.clear()
-            contentMessageId = null
+            sendContent(isLastMessage = true, skipIfSendFailure = true)
         }
     }
 
     suspend fun updateOrSend(vararg buttons: BotUtils.ControlKeyboardButton) = bot.apply {
-        if (contentBuffer.isNotEmpty()) {
-            reasoningBuffer.clear()
-            if (reasoningMessageIds.isNotEmpty()) {
-                deleteAllReasoningMessages(reasoningMessageIds)
-                reasoningMessageIds.clear()
-                execute(botMessage(chatId, "Подумал, получается:"))
+        when {
+            contentBuffer.isNotEmpty() -> {
+                clearReasoning()
+                sendContent(*buttons)
             }
+            reasoningBuffer.isNotEmpty() -> sendReasoning(*buttons)
+        }
+    }
 
-            val contentMessage = MarkdownHelper.formatMessage(contentBuffer.toString())
-            try {
-                contentMessageId = updateOrSendMessage(
-                    message = contentMessage,
-                    existingMessageId = contentMessageId,
-                    keyboardButtons = buttons,
-                )
-            } catch (e: TelegramApiRequestException) {
-                if (e.errorCode == BotConfig.BAD_REQUEST_ERROR_CODE) {
-                    contentMessageId = updateOrSendMessage(
-                        message = contentMessage,
-                        existingMessageId = contentMessageId,
-                        keyboardButtons = buttons,
-                        parseMode = null,
-                    )
+    private fun Bot.clearReasoning() {
+        reasoningBuffer.clear()
+        if (reasoningMessageIds.isNotEmpty()) {
+            deleteAllReasoningMessages()
+            reasoningMessageIds.clear()
+            execute(botMessage(chatId, "Подумал, получается:"))
+        }
+    }
+
+    private suspend fun Bot.sendReasoning(
+        vararg buttons: BotUtils.ControlKeyboardButton,
+        isLastMessage: Boolean = false,
+    ) {
+        val reasoningMessageId = updateOrSendMessage(
+            message = reasoningBuffer.toString(),
+            existingMessageId = reasoningMessageIds.lastOrNull(),
+            parseMode = null,
+            keyboardButtons = buttons,
+        )
+        reasoningMessageIds.add(reasoningMessageId)
+
+        if (isLastMessage) {
+            reasoningBuffer.clear()
+            reasoningMessageIds.remove(null)
+            reasoningMessageIds.add(null)
+        }
+    }
+
+    private suspend fun Bot.sendContent(
+        vararg buttons: BotUtils.ControlKeyboardButton,
+        isNeedFormatting: Boolean = true,
+        skipIfSendFailure: Boolean = false,
+        isLastMessage: Boolean = false,
+    ) {
+        try {
+            val contentMessage = contentBuffer.toString()
+
+            contentMessageId = updateOrSendMessage(
+                message = contentMessage,
+                existingMessageId = contentMessageId,
+                keyboardButtons = buttons,
+                parseMode = if (isNeedFormatting) BotConfig.BOT_MESSAGES_PARSE_MODE else null
+            )
+        } catch (e: TelegramApiRequestException) {
+            if (e.errorCode == BotConfig.BAD_REQUEST_ERROR_CODE) {
+                if (skipIfSendFailure) {
+                    log.debug("Can't send message: ${e.message}, skip")
+                    return
+                } else {
                     log.debug("Can't send message: ${e.message}, send without formatting")
+                    sendContent(*buttons, isNeedFormatting = false)
                 }
             }
-
-        } else if (reasoningBuffer.isNotEmpty()) {
-            val reasoningMessageId = updateOrSendMessage(
-                message = reasoningBuffer.toString(),
-                existingMessageId = reasoningMessageIds.lastOrNull(),
-                parseMode = null,
-                keyboardButtons = buttons,
-            )
-            reasoningMessageIds.add(reasoningMessageId)
         }
-        log.info("reasoningMessageIds: $reasoningMessageIds")
+
+        if (isLastMessage) {
+            contentBuffer.clear()
+            contentMessageId = null
+        }
     }
 
     /**
@@ -107,7 +119,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     private suspend fun Bot.updateOrSendMessage(
         message: String,
         existingMessageId: Int?,
-        parseMode: String? = "MarkdownV2",
+        parseMode: String? = BotConfig.BOT_MESSAGES_PARSE_MODE,
         vararg keyboardButtons: BotUtils.ControlKeyboardButton,
     ): Int? {
         if (message.isEmpty()) return existingMessageId
@@ -138,21 +150,14 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
             .build()
     }
 
-    private fun deleteAllReasoningMessages(reasoningMessageIds: Set<Int?>) {
-        bot.execute(
-            DeleteMessages.builder()
-                .chatId(chatId)
-                .messageIds(reasoningMessageIds.mapNotNull { it })
-                .build()
-        )
-    }
-
-    fun deleteAllReasoningMessages(bot: Bot) {
-        reasoningMessageIds.mapNotNull { it }.let {
-            if (it.isNotEmpty()) {
-                deleteAllReasoningMessages(reasoningMessageIds)
-                bot.execute(bot.botMessage(chatId, "Ща, по новой..."))
-            }
+    fun deleteAllReasoningMessages() {
+        reasoningMessageIds.mapNotNull { it }.takeIf { it.isNotEmpty() }?.let { ids ->
+            bot.execute(
+                DeleteMessages.builder()
+                    .chatId(chatId)
+                    .messageIds(ids)
+                    .build()
+            )
         }
     }
 }
