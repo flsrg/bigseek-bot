@@ -15,7 +15,9 @@ import kotlinx.coroutines.future.await
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
+import org.telegram.telegrambots.meta.api.methods.ActionType
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
+import org.telegram.telegrambots.meta.api.methods.send.SendChatAction
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.objects.Message
 import org.telegram.telegrambots.meta.api.objects.Update
@@ -81,12 +83,14 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         chatJobs[chatId]?.cancel(CancellationException("New message in chat"))
 
         val newJob = chatScope.launch {
-            executeAsync(SendMessage(chatId, "Думаю...")).await()
+            execute(SendMessage(chatId, "Думаю..."))
             log.info("Responding to ${update.message.from.userName}")
+            val messageProcessor = MessageProcessor(this@Bot, chatId)
 
             try {
                 withRetry(origin = "job askDeepseekR1") {
-                    askDeepseekR1(chatId, userMessage)
+                    messageProcessor.deleteAllReasoningMessages(bot = this@Bot)
+                    askDeepseekR1(chatId, userMessage, messageProcessor)
                 }
             } catch (e: Exception) {
                 if (isStopException(e)) {
@@ -111,9 +115,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         chatJobs[chatId] = newJob
     }
 
-    private suspend fun askDeepseekR1(chatId: String, userMessage: String) {
-        val messageProcessor = MessageProcessor(this@Bot, chatId)
-
+    private suspend fun askDeepseekR1(chatId: String, userMessage: String, messageProcessor: MessageProcessor) {
         openRouterDeepseekClient.askChat(chatId, userMessage)
             .onEach { message ->
                 messageProcessor.processMessage(message)

@@ -21,7 +21,7 @@ object BotUtils {
         chatId: String, messageId: Int,
         message: String,
         keyboardMarkup: InlineKeyboardMarkup? = null,
-        parseMode: String? = "MarkdownV2",
+        parseMode: String? = null,
     ): EditMessageText {
         return EditMessageText.builder()
             .chatId(chatId)
@@ -32,7 +32,7 @@ object BotUtils {
             .build()
     }
 
-    fun Bot.botMessage(chatId: String, message: String, parseMode: String? = "MarkdownV2"): SendMessage {
+    fun Bot.botMessage(chatId: String, message: String, parseMode: String? = null): SendMessage {
         return SendMessage.builder()
             .chatId(chatId)
             .text(message)
@@ -71,7 +71,6 @@ object BotUtils {
 
                 delay(currentDelay + (Math.random() * 1000).toLong()) // Add jitter
                 currentDelay = minOf((currentDelay * 2), maxDelay) // Exponential backoff
-
             }
         }
         throw RetryFailedException("Max retries ($maxRetries) exceeded")
@@ -82,7 +81,7 @@ object BotUtils {
             is TelegramApiRequestException -> {
                 when (e.errorCode) {
                     BotConfig.RATE_LIMIT_ERROR_CODE -> true
-                    BotConfig.BAD_REQUEST_ERROR_CODE -> true
+                    BotConfig.BAD_REQUEST_ERROR_CODE -> e.message?.contains("message to edit not found") ?: false
                     else -> false
                 }
             }
