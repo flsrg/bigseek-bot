@@ -11,12 +11,18 @@ import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 
 class MessageProcessor(private val bot: Bot, private val chatId: String) {
+    companion object {
+        private const val MARKDOWN_ERROR_MESSAGE = "can't parse entities"
+        private const val MAX_MESSAGE_SKIPPED_TIMES = 5
+    }
     private val log = LoggerFactory.getLogger(javaClass)!!
 
     private val contentBuffer = StringBuilder()
     private val reasoningBuffer = StringBuilder()
     private var contentMessageId: Int? = null
     private val reasoningMessageIds = linkedSetOf<Int?>()
+
+    private var messageSkippedTimes = 0
 
     suspend fun processMessage(message: ChatResponse) = bot.apply {
         message.choices.firstOrNull()?.delta?.let { delta ->
@@ -95,12 +101,11 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                 parseMode = if (isNeedFormatting) BotConfig.BOT_MESSAGES_PARSE_MODE else null
             )
         } catch (e: TelegramApiRequestException) {
-            if (e.errorCode == BotConfig.BAD_REQUEST_ERROR_CODE) {
-                if (skipIfSendFailure) {
-                    log.debug("Can't send message: ${e.message}, skip")
+            if (e.errorCode == BotConfig.BAD_REQUEST_ERROR_CODE && e.message?.contains(MARKDOWN_ERROR_MESSAGE) == true) {
+                if (skipIfSendFailure && messageSkippedTimes < MAX_MESSAGE_SKIPPED_TIMES) {
+                    messageSkippedTimes++
                     return
                 } else {
-                    log.debug("Can't send message: ${e.message}, send without formatting")
                     sendContent(*buttons, isNeedFormatting = false)
                 }
             }
