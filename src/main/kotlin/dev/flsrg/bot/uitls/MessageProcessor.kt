@@ -8,7 +8,6 @@ import dev.flsrg.bot.uitls.BotUtils.withRetry
 import dev.flsrg.llmpollingclient.client.OpenRouterClient.ChatResponse
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessages
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 
 class MessageProcessor(private val bot: Bot, private val chatId: String) {
@@ -126,7 +125,12 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
 
         return withRetry(maxRetries = 5, initialDelay = 5000, origin = "execute updateOrSendMessage") {
             if (existingMessageId == null) {
-                val newMessage = botMessage(chatId, message, parseMode)
+                val newMessage = botMessage(
+                    chatId = chatId,
+                    message = message,
+                    parseMode = parseMode
+                )
+
                 execute(newMessage).messageId
 
             } else {
@@ -134,7 +138,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                     chatId = chatId,
                     messageId = existingMessageId,
                     message = message,
-                    keyboardMarkup = createControlKeyboard(keyboardButtons.toList()),
+                    buttons = keyboardButtons.toList(),
                     parseMode = parseMode
                 )
 
@@ -142,12 +146,6 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                 existingMessageId
             }
         }
-    }
-
-    private fun createControlKeyboard(buttons: List<BotUtils.ControlKeyboardButton>): InlineKeyboardMarkup {
-        return InlineKeyboardMarkup.builder()
-            .keyboard(listOf(buttons))
-            .build()
     }
 
     fun deleteAllReasoningMessages() {
@@ -159,5 +157,12 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                     .build()
             )
         }
+    }
+
+    fun clear() {
+        reasoningBuffer.clear()
+        contentBuffer.clear()
+        contentMessageId = null
+        reasoningMessageIds.clear()
     }
 }

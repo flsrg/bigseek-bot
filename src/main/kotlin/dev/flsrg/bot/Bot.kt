@@ -1,5 +1,6 @@
 package dev.flsrg.bot
 
+import dev.flsrg.bot.uitls.BotUtils
 import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupClearHistory
 import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupStop
 import dev.flsrg.bot.uitls.BotUtils.botMessage
@@ -21,24 +22,37 @@ import org.telegram.telegrambots.meta.api.objects.Update
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 import java.util.concurrent.ConcurrentHashMap
 
+@OptIn(FlowPreview::class)
 class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     companion object {
         private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
         private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
-        private const val STOP_MESSAGE = "User requested stop"
 
         private const val START_DEFAULT_COMMAND = "/start"
+        private const val JOB_CLEANUP_INTERVAL = 5 * 60 * 1000L
     }
 
     private val apiKey = System.getenv("OPENROUTER_API_KEY")!!
 
     private val log: Logger = LoggerFactory.getLogger(javaClass)
 
-    private val chatScopes = ConcurrentHashMap<String, CoroutineScope>()
+    private val openRouterDeepseekClient = OpenRouterClient(OpenRouterDeepseekConfig(apiKey = apiKey))
+    private val messageHelper = MessageHelper(this)
+
     private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val chatJobs = ConcurrentHashMap<String, Job>()
+    private val rateLimits = ConcurrentHashMap<String, Long>()
 
-    private val openRouterDeepseekClient = OpenRouterClient(OpenRouterDeepseekConfig(apiKey = apiKey))
+    // Cleanup mechanism to remove completed jobs
+    init {
+        rootScope.launch {
+            while (isActive) {
+                delay(JOB_CLEANUP_INTERVAL) // Run every 5 minutes
+                chatJobs.entries.removeAll { (_, job) -> job.isCompleted }
+            }
+        }
+    }
+
     override fun getBotUsername() = "Bigdick"
 
     override fun onRegister() {
@@ -74,27 +88,28 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         val userMessage = update.message.text
         val chatId = update.message.chat.id.toString()
 
-        val chatScope = chatScopes.getOrPut(chatId) {
-            CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineName("Chat-$chatId"))
+        if (startMillis - rateLimits.getOrDefault(chatId, 0) < BotConfig.MESSAGE_RATE_LIMIT) {
+            messageHelper.sendRateLimitMessage(chatId)
+            return
         }
-        chatJobs[chatId]?.cancel(CancellationException("New message in chat"))
+        rateLimits[chatId] = startMillis
 
-        val newJob = chatScope.launch {
-            execute(SendMessage(chatId, "Думаю..."))
-            log.info("Responding to ${update.message.from.userName}")
+        chatJobs[chatId]?.cancel(BotUtils.NewMessageStopException())
+
+        val newJob = rootScope.launch {
+            messageHelper.sendThinkingMessage(chatId)
             val messageProcessor = MessageProcessor(this@Bot, chatId)
+            log.info("Responding to ${update.message.from.userName}")
 
             try {
                 withRetry(origin = "job askDeepseekR1") {
                     messageProcessor.deleteAllReasoningMessages()
+                    messageProcessor.clear()
                     askDeepseekR1(chatId, userMessage, messageProcessor)
                 }
             } catch (e: Exception) {
-                if (isStopException(e)) {
-                    execute(botMessage(chatId, "Стою"))
-                } else {
-                    execute(botMessage(chatId, "error: ${e.message}"))
-                }
+                val errorMessage = BotUtils.errorToMessage(e)
+                execute(botMessage(chatId, errorMessage))
 
                 log.error("Error processing message", e)
 
@@ -115,6 +130,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     private suspend fun askDeepseekR1(chatId: String, userMessage: String, messageProcessor: MessageProcessor) {
         openRouterDeepseekClient.askChat(chatId, message = userMessage)
             .onEach { message ->
+                if (!messageIsEmpty(message)) messageHelper.cleanupThinkingMessageButtons(chatId)
                 messageProcessor.processMessage(message)
             }
             .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
@@ -125,6 +141,11 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             .collect {
                 messageProcessor.updateOrSend(KeyboardMarkupStop(), KeyboardMarkupClearHistory())
             }
+    }
+
+    private fun messageIsEmpty(message: OpenRouterClient.ChatResponse): Boolean {
+        return message.choices.firstOrNull()?.delta?.reasoning?.isEmpty() != false
+                && message.choices.firstOrNull()?.delta?.content?.isEmpty() != false
     }
 
     private fun handleCallbackQuery(update: Update) {
@@ -148,7 +169,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
 
         try {
             if (job != null) {
-                job.cancel(CancellationException(STOP_MESSAGE))
+                job.cancel(BotUtils.UserStoppedException())
 
                 execute(
                     AnswerCallbackQuery.builder()
@@ -169,10 +190,6 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         }
     }
 
-    private fun isStopException(exception: Throwable): Boolean {
-        return exception is CancellationException && exception.message == STOP_MESSAGE
-    }
-
     private fun clearHistory(chatId: String, callbackId: String) {
         // Clear the chat history
         openRouterDeepseekClient.clearHistory(chatId)
@@ -190,7 +207,7 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
             execute(
                 SendMessage.builder()
                     .chatId(chatId)
-                    .text("Бот забыл историю! Давай по новой Миша")
+                    .text("Бот забыл историю. Давай по новой")
                     .build()
             )
         } catch (e: TelegramApiException) {

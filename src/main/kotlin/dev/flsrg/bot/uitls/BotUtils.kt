@@ -3,6 +3,7 @@ package dev.flsrg.bot.uitls
 import dev.flsrg.bot.Bot
 import dev.flsrg.bot.BotConfig
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
@@ -20,7 +21,7 @@ object BotUtils {
     fun Bot.editMessage(
         chatId: String, messageId: Int,
         message: String,
-        keyboardMarkup: InlineKeyboardMarkup? = null,
+        buttons: List<ControlKeyboardButton>? = null,
         parseMode: String? = null,
     ): EditMessageText {
         return EditMessageText.builder()
@@ -28,15 +29,21 @@ object BotUtils {
             .messageId(messageId)
             .text(message)
             .parseMode(parseMode)
-            .replyMarkup(keyboardMarkup)
+            .replyMarkup(buttons?.let { createControlKeyboard(it) })
             .build()
     }
 
-    fun Bot.botMessage(chatId: String, message: String, parseMode: String? = null): SendMessage {
+    fun Bot.botMessage(
+        chatId: String,
+        message: String,
+        buttons: List<ControlKeyboardButton>? = null,
+        parseMode: String? = null
+    ): SendMessage {
         return SendMessage.builder()
             .chatId(chatId)
             .text(message)
             .parseMode(parseMode)
+            .replyMarkup(buttons?.let { createControlKeyboard(it) })
             .build()
     }
 
@@ -52,6 +59,12 @@ object BotUtils {
             text = "🧹 Забудь все"
             callbackData = callback
         }
+    }
+
+    fun createControlKeyboard(buttons: List<ControlKeyboardButton>): InlineKeyboardMarkup {
+        return InlineKeyboardMarkup.builder()
+            .keyboard(listOf(buttons))
+            .build()
     }
 
     suspend fun <T> withRetry(
@@ -81,7 +94,7 @@ object BotUtils {
             is TelegramApiRequestException -> {
                 when (e.errorCode) {
                     BotConfig.RATE_LIMIT_ERROR_CODE -> true
-                    BotConfig.BAD_REQUEST_ERROR_CODE -> e.message?.contains("message to edit not found") ?: false
+                    BotConfig.BAD_REQUEST_ERROR_CODE -> e.message?.contains("message to edit not found") == true
                     else -> false
                 }
             }
@@ -95,6 +108,21 @@ object BotUtils {
             frames.skip(1).findFirst().map { it.methodName }.orElse(null)
         }
     }
+
+    fun errorToMessage(exception: Exception): String {
+        return if (exception is CancellationException) {
+            when (exception) {
+                is UserStoppedException -> return "Стою"
+                is NewMessageStopException -> return "Новое сообщение в чате, так, ща..."
+                else -> "error: ${exception.message}"
+            }
+        } else {
+            "error: ${exception.message}"
+        }
+    }
+
+    class UserStoppedException: CancellationException("User requested stop")
+    class NewMessageStopException: CancellationException("New message in chat")
 }
 
 class RetryFailedException(message: String) : Exception(message)
