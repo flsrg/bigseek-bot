@@ -6,7 +6,6 @@ import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.editMessage
 import dev.flsrg.bot.uitls.BotUtils.withRetry
 import dev.flsrg.llmpollingclient.client.OpenRouterClient.ChatResponse
-import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessages
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 
@@ -15,7 +14,6 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         private const val MARKDOWN_ERROR_MESSAGE = "can't parse entities"
         private const val MAX_MESSAGE_SKIPPED_TIMES = 5
     }
-    private val log = LoggerFactory.getLogger(javaClass)!!
 
     private val contentBuffer = StringBuilder()
     private val reasoningBuffer = StringBuilder()
@@ -51,9 +49,9 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         when {
             contentBuffer.isNotEmpty() -> {
                 clearReasoning()
-                sendContent(*buttons)
+                sendContent(buttons.toList())
             }
-            reasoningBuffer.isNotEmpty() -> sendReasoning(*buttons)
+            reasoningBuffer.isNotEmpty() -> sendReasoning(buttons.toList())
         }
     }
 
@@ -67,7 +65,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     }
 
     private suspend fun Bot.sendReasoning(
-        vararg buttons: BotUtils.ControlKeyboardButton,
+        buttons: List<BotUtils.ControlKeyboardButton> = emptyList(),
         isLastMessage: Boolean = false,
     ) {
         val reasoningMessageId = updateOrSendMessage(
@@ -86,7 +84,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     }
 
     private suspend fun Bot.sendContent(
-        vararg buttons: BotUtils.ControlKeyboardButton,
+        buttons: List<BotUtils.ControlKeyboardButton> = emptyList(),
         isNeedFormatting: Boolean = true,
         skipIfSendFailure: Boolean = false,
         isLastMessage: Boolean = false,
@@ -106,7 +104,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                     messageSkippedTimes++
                     return
                 } else {
-                    sendContent(*buttons, isNeedFormatting = false)
+                    sendContent(buttons, isNeedFormatting = false)
                 }
             }
         }
@@ -124,7 +122,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         message: String,
         existingMessageId: Int?,
         parseMode: String? = BotConfig.BOT_MESSAGES_PARSE_MODE,
-        vararg keyboardButtons: BotUtils.ControlKeyboardButton,
+        keyboardButtons: List<BotUtils.ControlKeyboardButton> = emptyList(),
     ): Int? {
         if (message.isEmpty()) return existingMessageId
 
@@ -133,7 +131,8 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                 val newMessage = botMessage(
                     chatId = chatId,
                     message = message,
-                    parseMode = parseMode
+                    buttons = keyboardButtons,
+                    parseMode = parseMode,
                 )
 
                 execute(newMessage).messageId
@@ -143,7 +142,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                     chatId = chatId,
                     messageId = existingMessageId,
                     message = message,
-                    buttons = keyboardButtons.toList(),
+                    buttons = keyboardButtons,
                     parseMode = parseMode
                 )
 

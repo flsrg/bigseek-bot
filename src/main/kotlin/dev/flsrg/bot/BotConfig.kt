@@ -7,7 +7,7 @@ object BotConfig {
     // to avoid "Message is too long" exception
     const val MESSAGE_MAX_LENGTH = 2000
     // to avoid "[429] Too Many Requests:" exception
-    const val MESSAGE_SAMPLING_DURATION = 2000L
+    const val MESSAGE_SAMPLING_DURATION = 1000L
     const val MESSAGE_RATE_LIMIT = 5000L
 
     const val RATE_LIMIT_ERROR_CODE = 429

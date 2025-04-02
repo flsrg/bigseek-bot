@@ -6,6 +6,8 @@ import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
+import org.telegram.telegrambots.meta.api.methods.ActionType
+import org.telegram.telegrambots.meta.api.methods.send.SendChatAction
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup
@@ -123,6 +125,17 @@ object BotUtils {
 
     class UserStoppedException: CancellationException("User requested stop")
     class NewMessageStopException: CancellationException("New message in chat")
+
+    fun Bot.sendTypingAction(chatId: String) {
+        execute(
+            SendChatAction.builder()
+                .chatId(chatId)
+                .action(ActionType.TYPING.name)
+                .build()
+        )
+    }
+
+    fun String.decapitalizeFirstChar(): String = replaceFirstChar { it.lowercase() }
 }
 
 class RetryFailedException(message: String) : Exception(message)
