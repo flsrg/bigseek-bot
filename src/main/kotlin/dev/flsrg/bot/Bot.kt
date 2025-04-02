@@ -7,7 +7,7 @@ import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.withRetry
 import dev.flsrg.bot.uitls.MessageProcessor
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
-import dev.flsrg.llmpollingclient.client.OpenRouterDeepseekConfig
+import dev.flsrg.llmpollingclient.client.OpenRouterConfig
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
@@ -32,11 +32,10 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
         private const val JOB_CLEANUP_INTERVAL = 5 * 60 * 1000L
     }
 
-    private val apiKey = System.getenv("OPENROUTER_API_KEY")!!
-
     private val log: Logger = LoggerFactory.getLogger(javaClass)
 
-    private val openRouterDeepseekClient = OpenRouterClient(OpenRouterDeepseekConfig(apiKey = apiKey))
+    private val apiKey = System.getenv("OPENROUTER_API_KEY")!!
+    private val openRouterDeepseekClient = OpenRouterClient(OpenRouterConfig(apiKey = apiKey))
     private val messageHelper = MessageHelper(this)
 
     private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -128,19 +127,22 @@ class Bot(botToken: String?) : TelegramLongPollingBot(botToken) {
     }
 
     private suspend fun askDeepseekR1(chatId: String, userMessage: String, messageProcessor: MessageProcessor) {
-        openRouterDeepseekClient.askChat(chatId, message = userMessage)
-            .onEach { message ->
-                if (!messageIsEmpty(message)) messageHelper.cleanupThinkingMessageButtons(chatId)
-                messageProcessor.processMessage(message)
-            }
-            .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
-            .onCompletion { exception ->
-                if (exception != null) throw exception
-                messageProcessor.updateOrSend(KeyboardMarkupClearHistory())
-            }
-            .collect {
-                messageProcessor.updateOrSend(KeyboardMarkupStop(), KeyboardMarkupClearHistory())
-            }
+        openRouterDeepseekClient.askChat(
+            chatId = chatId,
+            model = OpenRouterConfig.DEEPSEEK_R1,
+            message = userMessage
+        ).onEach { message ->
+            if (!messageIsEmpty(message)) messageHelper.cleanupThinkingMessageButtons(chatId)
+            messageProcessor.processMessage(message)
+        }
+        .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
+        .onCompletion { exception ->
+            if (exception != null) throw exception
+            messageProcessor.updateOrSend(KeyboardMarkupClearHistory())
+        }
+        .collect {
+            messageProcessor.updateOrSend(KeyboardMarkupStop(), KeyboardMarkupClearHistory())
+        }
     }
 
     private fun messageIsEmpty(message: OpenRouterClient.ChatResponse): Boolean {
