@@ -2,6 +2,8 @@ package dev.flsrg.bot.uitls
 
 import dev.flsrg.bot.Bot
 import dev.flsrg.bot.BotConfig
+import dev.flsrg.bot.Strings
+import dev.flsrg.bot.roleplay.LanguageDetector
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -50,15 +52,15 @@ object BotUtils {
     }
 
     sealed class ControlKeyboardButton(val callback: String): InlineKeyboardButton()
-    class KeyboardMarkupStop(): ControlKeyboardButton(CALLBACK_DATA_FORCE_STOP) {
+    class KeyboardMarkupStop(language: LanguageDetector.Language): ControlKeyboardButton(CALLBACK_DATA_FORCE_STOP) {
         init {
-            text = "🚫 Остановись"
+            text = Strings.KeyboardStopText.get(language)
             callbackData = callback
         }
     }
-    class KeyboardMarkupClearHistory(): ControlKeyboardButton(CALLBACK_DATA_CLEAR_HISTORY) {
+    class KeyboardMarkupClearHistory(language: LanguageDetector.Language): ControlKeyboardButton(CALLBACK_DATA_CLEAR_HISTORY) {
         init {
-            text = "🧹 Забудь все"
+            text = Strings.KeyboardClearHistoryText.get(language)
             callbackData = callback
         }
     }
@@ -111,11 +113,11 @@ object BotUtils {
         }
     }
 
-    fun errorToMessage(exception: Exception): String {
+    fun errorToMessage(exception: Exception, language: LanguageDetector.Language): String {
         return if (exception is CancellationException) {
             when (exception) {
-                is UserStoppedException -> return "Стою"
-                is NewMessageStopException -> return "Новое сообщение в чате, так, ща..."
+                is UserStoppedException -> return Strings.StopErrorUser.get(language)
+                is NewMessageStopException -> return Strings.StopErrorUser.get(language)
                 else -> "error: ${exception.message}"
             }
         } else {

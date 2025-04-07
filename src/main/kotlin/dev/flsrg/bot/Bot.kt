@@ -3,6 +3,10 @@ package dev.flsrg.bot
 import dev.flsrg.bot.MessageHelper.Companion.isStartMessage
 import dev.flsrg.bot.MessageHelper.Companion.isThinkingMessage
 import dev.flsrg.bot.repo.SQLUsersRepository
+import dev.flsrg.bot.roleplay.LanguageDetector
+import dev.flsrg.bot.roleplay.LanguageDetector.Language.RU
+import dev.flsrg.bot.roleplay.RoleConfig
+import dev.flsrg.bot.roleplay.RoleDetector
 import dev.flsrg.bot.uitls.BotUtils
 import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupClearHistory
 import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupStop
@@ -40,10 +44,13 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
     private val messageHelper = MessageHelper(this)
     private val usrRepo = SQLUsersRepository()
     private val adminHelper = AdminHelper(this, adminUserId, usrRepo)
+    private val roleDetector = RoleDetector(RoleConfig.allRoles)
 
     private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val chatJobs = ConcurrentHashMap<String, Job>()
     private val rateLimits = ConcurrentHashMap<String, Long>()
+
+    private var currentLanguage = RU
 
     // Cleanup mechanism to remove completed jobs
     init {
@@ -93,7 +100,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         val userMessage = update.message.text
 
         if (startMillis - rateLimits.getOrDefault(chatId, 0) < BotConfig.MESSAGE_RATE_LIMIT) {
-            messageHelper.sendRateLimitMessage(chatId)
+            messageHelper.sendRateLimitMessage(chatId, currentLanguage)
             return
         }
         rateLimits[chatId] = startMillis
@@ -102,7 +109,8 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
 
         val newJob = rootScope.launch {
             sendTypingAction(chatId)
-            messageHelper.sendRespondingMessage(chatId, isThinking)
+            currentLanguage = LanguageDetector.detectLanguage(userMessage)
+            messageHelper.sendRespondingMessage(chatId, isThinking, currentLanguage)
 
             val messageProcessor = MessageProcessor(this@Bot, chatId)
             log.info("Responding (${if (isThinking) "R1" else "V3"}) to ${update.message.from.userName}")
@@ -112,11 +120,12 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
                     messageProcessor.deleteAllReasoningMessages()
                     messageProcessor.clear()
                     adminHelper.updateUserMessage(userId, userName, OpenRouterClient.ChatMessage(role = "user", content = userMessage))
-                    val finalAssistantMessage = askDeepseek(chatId, isThinking, userMessage, messageProcessor)
+
+                    val finalAssistantMessage = askDeepseek(chatId, isThinking, userMessage, messageProcessor, currentLanguage)
                     adminHelper.updateUserMessage(userId, userName, finalAssistantMessage)
                 }
             } catch (e: Exception) {
-                val errorMessage = BotUtils.errorToMessage(e)
+                val errorMessage = BotUtils.errorToMessage(e, currentLanguage)
                 execute(botMessage(chatId, errorMessage))
 
                 log.error("Error processing message", e)
@@ -138,15 +147,19 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         chatId: String,
         isThinking: Boolean,
         userMessage: String,
-        messageProcessor: MessageProcessor
+        messageProcessor: MessageProcessor,
+        language: LanguageDetector.Language,
     ): OpenRouterClient.ChatMessage {
         val model = if (isThinking) OpenRouterConfig.DEEPSEEK_R1 else OpenRouterConfig.DEEPSEEK_V3
         var finalAssistantMessage: OpenRouterClient.ChatMessage? = null
+        val role = roleDetector.detectRole(userMessage, language)
+        log.info("Role detected: $role for $language")
 
         openRouterDeepseekClient.askChat(
             chatId = chatId,
             model = model,
-            message = userMessage
+            message = userMessage,
+            systemMessage = if (language == RU) role.russianSystemMessage else role.systemMessage,
         ).onEach { message ->
             if (!messageIsEmpty(message)) messageHelper.cleanupRespondingMessageButtons(chatId)
             messageProcessor.processMessage(message)
@@ -154,7 +167,9 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
         .onCompletion { exception ->
             if (exception != null) throw exception
-            messageProcessor.updateOrSend(KeyboardMarkupClearHistory())
+            messageProcessor.updateOrSend(
+                KeyboardMarkupClearHistory(currentLanguage)
+            )
             finalAssistantMessage = OpenRouterClient.ChatMessage(
                 role = "assistant" ,
                 content = messageProcessor.getFinalAssistantMessage()
@@ -162,7 +177,10 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         }
         .collect {
             sendTypingAction(chatId)
-            messageProcessor.updateOrSend(KeyboardMarkupStop(), KeyboardMarkupClearHistory())
+            messageProcessor.updateOrSend(
+                KeyboardMarkupStop(currentLanguage),
+                KeyboardMarkupClearHistory(currentLanguage)
+            )
         }
 
         return finalAssistantMessage!!
@@ -199,14 +217,14 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
                 execute(
                     AnswerCallbackQuery.builder()
                         .callbackQueryId(callbackId)
-                        .text("Остановился!")
+                        .text(Strings.CallbackStopSuccessAnswer.get(currentLanguage))
                         .build()
                 )
             } else {
                 execute(
                     AnswerCallbackQuery.builder()
                         .callbackQueryId(callbackId)
-                        .text("Нечего останавливать")
+                        .text(Strings.CallbackStopNothingRunningAnswer.get(currentLanguage))
                         .build()
                 )
             }
@@ -223,7 +241,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         execute(
             AnswerCallbackQuery.builder()
                 .callbackQueryId(callbackId)
-                .text("History cleared!")
+                .text(Strings.CallbackClearHistorySuccessAnswer.get(currentLanguage))
                 .build()
         )
 
@@ -232,7 +250,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
             execute(
                 SendMessage.builder()
                     .chatId(chatId)
-                    .text("Бот забыл историю. Давай по новой")
+                    .text(Strings.CallbackClearHistorySuccessMessage.get(currentLanguage))
                     .build()
             )
         } catch (e: TelegramApiException) {

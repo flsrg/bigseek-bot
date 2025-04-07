@@ -1,5 +1,6 @@
 package dev.flsrg.bot
 
+import dev.flsrg.bot.roleplay.LanguageDetector
 import dev.flsrg.bot.uitls.BotUtils
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.decapitalizeFirstChar
@@ -11,10 +12,9 @@ class MessageHelper(private val bot: Bot) {
     companion object {
         private const val START_DEFAULT_COMMAND = "/start"
 
-        private const val THINKING_MESSAGE = "Думаю..."
-        private const val RESPONSE_MESSAGE = "Так, ну смотри"
-
-        private val THINKING_PREFIX = listOf("Подумай", "Думай", "Think")
+        val RU_THINKING_PREFIX = listOf("Подумай", "Думай")
+        val EN_THINKING_PREFIX = listOf("Think")
+        private val THINKING_PREFIX = RU_THINKING_PREFIX + EN_THINKING_PREFIX
         private const val THINKING_PREFIX_RANGE = 20
 
         fun isStartMessage(message: Message): Boolean {
@@ -36,13 +36,18 @@ class MessageHelper(private val bot: Bot) {
 
     private val messages = ConcurrentHashMap<String, Pair<Int, String>>()
 
-    fun sendRespondingMessage(chatId: String, isThinking: Boolean) = bot.apply {
-        val message = if(isThinking) THINKING_MESSAGE else RESPONSE_MESSAGE
+    fun sendRespondingMessage(chatId: String, isThinking: Boolean, language: LanguageDetector.Language) = bot.apply {
+        val message = if(isThinking) {
+            Strings.ThinkingMessage.get(language)
+        } else {
+            Strings.ResponseMessage.get(language)
+        }
+
         val messageId = execute(
             botMessage(
                 chatId = chatId,
                 message = message,
-                buttons = listOf(BotUtils.KeyboardMarkupStop())
+                buttons = listOf(BotUtils.KeyboardMarkupStop(language))
             )
         ).messageId
 
@@ -64,10 +69,12 @@ class MessageHelper(private val bot: Bot) {
         }
     }
 
-    fun sendRateLimitMessage(chatId: String) = bot.apply {
-        execute(botMessage(
-            chatId = chatId,
-            message = "Превышен лимит запросов. Подожди пока")
+    fun sendRateLimitMessage(chatId: String, language: LanguageDetector.Language) = bot.apply {
+        execute(
+            botMessage(
+                chatId = chatId,
+                message = Strings.RateLimitMessage.get(language)
+            )
         )
     }
 }

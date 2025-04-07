@@ -12,7 +12,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 class MessageProcessor(private val bot: Bot, private val chatId: String) {
     companion object {
         private const val MARKDOWN_ERROR_MESSAGE = "can't parse entities"
-        private const val MAX_MESSAGE_SKIPPED_TIMES = 5
+        private const val MAX_MESSAGE_SKIPPED_TIMES = 2
     }
 
     private val contentBuffer = StringBuilder()
@@ -117,6 +117,8 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         }
     }
 
+    private var prevMessage: String? = null
+
     /**
      * @return existing active editable message id
      */
@@ -127,6 +129,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         keyboardButtons: List<BotUtils.ControlKeyboardButton> = emptyList(),
     ): Int? {
         if (message.isEmpty()) return existingMessageId
+        if (message == prevMessage) return existingMessageId
 
         return withRetry(maxRetries = 5, initialDelay = 5000, origin = "execute updateOrSendMessage") {
             if (existingMessageId == null) {
@@ -152,6 +155,8 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                 existingMessageId
             }
         }
+
+        prevMessage = message
     }
 
     fun deleteAllReasoningMessages() {
