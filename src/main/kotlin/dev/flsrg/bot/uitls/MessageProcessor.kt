@@ -19,6 +19,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     private val reasoningBuffer = StringBuilder()
     private var contentMessageId: Int? = null
     private val reasoningMessageIds = linkedSetOf<Int?>()
+    private var finalAssistantMessage = ""
 
     private var messageSkippedTimes = 0
 
@@ -91,6 +92,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     ) {
         try {
             val contentMessage = contentBuffer.toString()
+            finalAssistantMessage += contentMessage
 
             contentMessageId = updateOrSendMessage(
                 message = contentMessage,
@@ -169,4 +171,6 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         contentMessageId = null
         reasoningMessageIds.clear()
     }
+
+    fun getFinalAssistantMessage(): String = finalAssistantMessage
 }
