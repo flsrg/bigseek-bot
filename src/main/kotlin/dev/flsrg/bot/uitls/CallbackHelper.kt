@@ -17,6 +17,7 @@ class CallbackHelper(private val bot: Bot) {
         val callback = update.callbackQuery
         val chatId = callback.message.chatId.toString()
         val callbackId = callback.id
+        val userId = callback.from.id
 
         when (callback.data) {
             CALLBACK_DATA_FORCE_STOP -> {
@@ -24,7 +25,7 @@ class CallbackHelper(private val bot: Bot) {
             }
             CALLBACK_DATA_CLEAR_HISTORY -> {
                 forceStop(chatId, callbackId, language)
-                clearHistory(chatId, callbackId, language)
+                clearHistory(userId, chatId, callbackId, language)
             }
         }
     }
@@ -55,9 +56,9 @@ class CallbackHelper(private val bot: Bot) {
         }
     }
 
-    private fun clearHistory(chatId: String, callbackId: String, language: LanguageDetector.Language) = bot.apply {
+    private fun clearHistory(userId: Long, chatId: String, callbackId: String, language: LanguageDetector.Language) = bot.apply {
         // Clear the chat history
-        client.clearHistory(chatId)
+        historyManager.clearHistory(userId)
 
         // Send confirmation to the user
         execute(

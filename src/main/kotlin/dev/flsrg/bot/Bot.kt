@@ -1,5 +1,8 @@
 package dev.flsrg.bot
 
+import dev.flsrg.bot.db.Database
+import dev.flsrg.bot.hist.HistoryManager
+import dev.flsrg.bot.repo.SQLChatHistRepository
 import dev.flsrg.bot.uitls.MessageHelper.Companion.isStartMessage
 import dev.flsrg.bot.uitls.MessageHelper.Companion.isThinkingMessage
 import dev.flsrg.bot.repo.SQLUsersRepository
@@ -19,6 +22,8 @@ import dev.flsrg.bot.uitls.MessageHelper
 import dev.flsrg.bot.uitls.MessageProcessor
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import dev.flsrg.llmpollingclient.client.OpenRouterConfig
+import dev.flsrg.llmpollingclient.model.ChatMessage
+import dev.flsrg.llmpollingclient.model.ChatResponse
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
@@ -33,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap
 class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToken) {
     companion object {
         private const val JOB_CLEANUP_INTERVAL = 5 * 60 * 1000L
+        const val BOT_USER_NAME = "BigDick"
     }
 
     private val log: Logger = LoggerFactory.getLogger(javaClass)
@@ -41,9 +47,11 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
     val client = OpenRouterClient(OpenRouterConfig(apiKey = apiKey))
 
     private val messageHelper = MessageHelper(this)
-    private val adminHelper = AdminHelper(this, adminUserId, SQLUsersRepository())
+    private val usersRepository = SQLUsersRepository()
+    private val adminHelper = AdminHelper(this, adminUserId, usersRepository)
     private val roleDetector = RoleDetector(RoleConfig.allRoles)
     private val callbackHelper = CallbackHelper(this)
+    val historyManager = HistoryManager(SQLChatHistRepository(Database.database), usersRepository)
 
     private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val rateLimits = ConcurrentHashMap<String, Long>()
@@ -60,7 +68,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         }
     }
 
-    override fun getBotUsername() = "Bigdick"
+    override fun getBotUsername() = BOT_USER_NAME
 
     override fun onRegister() {
         super.onRegister()
@@ -117,10 +125,10 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
                 withRetry(origin = "job askDeepseekR1") {
                     messageProcessor.deleteAllReasoningMessages()
                     messageProcessor.clear()
-                    adminHelper.updateUserMessage(userId, userName, OpenRouterClient.ChatMessage(role = "user", content = userMessage))
+                    adminHelper.updateUserMessage(userId, userName)
 
-                    val finalAssistantMessage = askDeepseek(chatId, isThinking, userMessage, messageProcessor, lang)
-                    adminHelper.updateUserMessage(userId, userName, finalAssistantMessage)
+                    askDeepseek(userId, chatId, isThinking, userMessage, messageProcessor, lang)
+                    adminHelper.updateUserMessage(userId, userName)
                 }
             } catch (e: Exception) {
                 val errorMessage = BotUtils.errorToMessage(e, lang)
@@ -142,22 +150,35 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
     }
 
     private suspend fun askDeepseek(
+        userId: Long,
         chatId: String,
         isThinking: Boolean,
         userMessage: String,
         messageProcessor: MessageProcessor,
         language: LanguageDetector.Language,
-    ): OpenRouterClient.ChatMessage {
+    ): ChatMessage {
         val model = if (isThinking) OpenRouterConfig.DEEPSEEK_R1 else OpenRouterConfig.DEEPSEEK_V3
-        var finalAssistantMessage: OpenRouterClient.ChatMessage? = null
+        var finalAssistantMessage: ChatMessage? = null
         val role = roleDetector.detectRole(userMessage, language)
         log.info("Role detected: ${role.roleName} for $language")
+
+        historyManager.addMessage(userId, ChatMessage(role = "user", content = userMessage))
+        val messages = historyManager.getHistory(userId)
+        log.info("messsages: $messages")
+
+        val systemMessage = if (language == RU) {
+            role.russianSystemMessage!!
+        } else {
+            role.systemMessage
+        }.let {
+            ChatMessage(role = "system", content = it)
+        }
 
         client.askChat(
             chatId = chatId,
             model = model,
-            message = userMessage,
-            systemMessage = if (language == RU) role.russianSystemMessage else role.systemMessage,
+            messages = messages,
+            systemMessage = systemMessage,
         ).onEach { message ->
             if (!messageIsEmpty(message)) messageHelper.cleanupRespondingMessageButtons(chatId)
             messageProcessor.processMessage(message)
@@ -165,10 +186,9 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
         .onCompletion { exception ->
             if (exception != null) throw exception
-            messageProcessor.updateOrSend(
-                KeyboardButtonClearHistory(language)
-            )
-            finalAssistantMessage = OpenRouterClient.ChatMessage(
+
+            messageProcessor.updateOrSend(KeyboardButtonClearHistory(language), language = language)
+            finalAssistantMessage = ChatMessage(
                 role = "assistant" ,
                 content = messageProcessor.getFinalAssistantMessage()
             )
@@ -177,14 +197,20 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
             sendTypingAction(chatId)
             messageProcessor.updateOrSend(
                 KeyboardButtonStop(language),
-                KeyboardButtonClearHistory(language)
+                KeyboardButtonClearHistory(language),
+                language = language,
             )
         }
 
-        return finalAssistantMessage!!
+        if (finalAssistantMessage!!.content.isEmpty()) {
+            throw BotUtils.ExceptionEmptyResponse()
+        }
+
+        historyManager.addMessage(userId, finalAssistantMessage)
+        return finalAssistantMessage
     }
 
-    private fun messageIsEmpty(message: OpenRouterClient.ChatResponse): Boolean {
+    private fun messageIsEmpty(message: ChatResponse): Boolean {
         return message.choices.firstOrNull()?.delta?.reasoning?.isEmpty() != false
                 && message.choices.firstOrNull()?.delta?.content?.isEmpty() != false
     }

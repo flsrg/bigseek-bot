@@ -5,17 +5,19 @@ import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 
-object DatabaseFactory {
+object Database {
     private val log = LoggerFactory.getLogger(javaClass)
+    lateinit var database: Database
 
     fun init(botName: String) {
-        Database.connect(
+        database = Database.connect(
             url = "jdbc:sqlite:${botName}_bot_data.db",
             driver = "org.sqlite.JDBC",
         )
 
-        transaction {
+        transaction(database) {
             SchemaUtils.create(Users)
+            SchemaUtils.create(MessageHistTable)
         }
 
         log.info("Database connected")

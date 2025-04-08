@@ -3,7 +3,6 @@ package dev.flsrg.bot.uitls
 import dev.flsrg.bot.Bot
 import dev.flsrg.bot.BotConfig
 import dev.flsrg.bot.roleplay.LanguageDetector
-import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
@@ -100,10 +99,12 @@ object BotUtils {
                     else -> false
                 }
             }
-            is OpenRouterClient.ExceptionEmptyResponse -> true
+            is ExceptionEmptyResponse -> true
             else -> false
         }
     }
+
+    class ExceptionEmptyResponse() : Exception("Empty response")
 
     fun getCallerMethodName(): String? {
         return StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE).walk { frames ->

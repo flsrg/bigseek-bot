@@ -13,6 +13,7 @@ sealed class Strings(
 
     object StartMessage : Strings("Го", "Let's go")
     object ThinkingMessage : Strings("Думаю...", "Thinking...")
+    object ThinkingCompletedMessage : Strings("Подумал, получается:", "Thought and it's:")
     object ResponseMessage : Strings("Так, ну смотри", "So, well, look")
     object RateLimitMessage : Strings("Превышен лимит запросов. Подожди пока", "Rate limit exceeded. Wait")
     object KeyboardStopText : Strings("🚫 Остановись", "🚫 Stop")

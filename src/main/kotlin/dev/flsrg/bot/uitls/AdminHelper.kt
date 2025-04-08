@@ -3,7 +3,7 @@ package dev.flsrg.bot.uitls
 import dev.flsrg.bot.Bot
 import dev.flsrg.bot.repo.UserRepository
 import dev.flsrg.bot.uitls.BotUtils.botMessage
-import dev.flsrg.llmpollingclient.client.OpenRouterClient
+import dev.flsrg.llmpollingclient.model.ChatMessage
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.ParseMode
 import org.telegram.telegrambots.meta.api.objects.Update
@@ -30,7 +30,7 @@ class AdminHelper(
         }
     }
 
-    fun updateUserMessage(userId: Long, userName: String, message: OpenRouterClient.ChatMessage) {
+    fun updateUserMessage(userId: Long, userName: String) {
         userRepository.recordMessage(userId, userName)
     }
 
@@ -40,7 +40,7 @@ class AdminHelper(
                 📊 *Bot Statistics Report*
                 
                 👥 *Total Users:* ${userRepository.getTotalUserCount()}
-                🟢 *Active Users (30 days):* ${userRepository.getActiveUserCount(30)}
+                🟢 *Active Users (30 days):* ${userRepository.getActiveUsers(30).count()}
                 💬 *Total Messages Processed:* ${userRepository.getTotalMessageCount()}
                 📈 *Daily Messages (Avg):* ${getDailyMessageAverage()}
                 👤 *Most Active User:* ${getMostActiveUser()}

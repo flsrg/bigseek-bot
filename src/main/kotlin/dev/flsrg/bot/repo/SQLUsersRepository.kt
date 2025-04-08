@@ -1,7 +1,7 @@
 package dev.flsrg.bot.repo
 
+import dev.flsrg.bot.db.User
 import dev.flsrg.bot.db.Users
-import dev.flsrg.bot.db.model.User
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder
@@ -40,12 +40,11 @@ class SQLUsersRepository: UserRepository {
         Users.selectAll().count().toInt()
     }
 
-    override fun getActiveUserCount(days: Int): Int = transaction {
+    override fun getActiveUsers(days: Int): List<User> = transaction {
         val cutoff = System.currentTimeMillis() - (days * 86_400_000L)
-        Users.select(Users.lastActive)
-            .where{ Users.lastActive greaterEq cutoff}
-            .count()
-            .toInt()
+        Users.selectAll()
+            .where{ Users.lastActive greaterEq cutoff }
+            .map { it.toUser() }
     }
 
     override fun getOldestUserDate(): Long = transaction {

@@ -2,10 +2,11 @@ package dev.flsrg.bot.uitls
 
 import dev.flsrg.bot.Bot
 import dev.flsrg.bot.BotConfig
+import dev.flsrg.bot.roleplay.LanguageDetector
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.editMessage
 import dev.flsrg.bot.uitls.BotUtils.withRetry
-import dev.flsrg.llmpollingclient.client.OpenRouterClient.ChatResponse
+import dev.flsrg.llmpollingclient.model.ChatResponse
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessages
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 
@@ -19,7 +20,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     private val reasoningBuffer = StringBuilder()
     private var contentMessageId: Int? = null
     private val reasoningMessageIds = linkedSetOf<Int?>()
-    private var finalAssistantMessage = ""
+    private var finalAssistantMessage = StringBuilder()
 
     private var messageSkippedTimes = 0
 
@@ -39,6 +40,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     }
 
     private suspend fun Bot.handleContent(content: String) {
+        finalAssistantMessage.append(content)
         contentBuffer.append(content)
 
         if (contentBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
@@ -46,22 +48,22 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         }
     }
 
-    suspend fun updateOrSend(vararg buttons: BotUtils.KeyboardButton) = bot.apply {
+    suspend fun updateOrSend(vararg buttons: BotUtils.KeyboardButton, language: LanguageDetector.Language) = bot.apply {
         when {
             contentBuffer.isNotEmpty() -> {
-                clearReasoning()
+                clearReasoning(language)
                 sendContent(buttons.toList())
             }
             reasoningBuffer.isNotEmpty() -> sendReasoning(buttons.toList())
         }
     }
 
-    private fun Bot.clearReasoning() {
+    private fun Bot.clearReasoning(language: LanguageDetector.Language) {
         reasoningBuffer.clear()
         if (reasoningMessageIds.isNotEmpty()) {
             deleteAllReasoningMessages()
             reasoningMessageIds.clear()
-            execute(botMessage(chatId, "Подумал, получается:"))
+            execute(botMessage(chatId, Strings.ThinkingCompletedMessage.get(language)))
         }
     }
 
@@ -92,7 +94,6 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     ) {
         try {
             val contentMessage = contentBuffer.toString()
-            finalAssistantMessage += contentMessage
 
             contentMessageId = updateOrSendMessage(
                 message = contentMessage,
@@ -177,5 +178,5 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         reasoningMessageIds.clear()
     }
 
-    fun getFinalAssistantMessage(): String = finalAssistantMessage
+    fun getFinalAssistantMessage(): String = finalAssistantMessage.toString()
 }

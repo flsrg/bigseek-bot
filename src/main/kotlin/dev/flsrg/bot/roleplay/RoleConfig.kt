@@ -11,6 +11,14 @@ data class RoleConfig(
     companion object {
         private val englishRoles = listOf(
             RoleConfig(
+                roleName = "Kolin Developer",
+                systemMessage = "You're a Kotlin senior dev. Provide Kotlin solutions with modern Kotlin development best practices.",
+                russianSystemMessage = "Вы опытный разработчик на Kotlin. Предлагайте решения с использованием современных практик и методик разработки.",
+                keywords = setOf("kotlin", "ktor", "jvm"),
+                russianKeywords = setOf("котлин", "ктор", "джемвм"),
+                priority = 2
+            ),
+            RoleConfig(
                 roleName = "Android Developer",
                 systemMessage = "You're an Android expert. Provide Kotlin solutions with modern Android development best practices (Jetpack Compose, Coroutines, MVVM, etc.).",
                 russianSystemMessage = "Вы эксперт по Android. Предлагайте решения на Kotlin с использованием современных практик (Jetpack Compose, Coroutines, MVVM и т.д.).",
@@ -97,8 +105,8 @@ data class RoleConfig(
                 roleName = "Health Advisor",
                 systemMessage = "You provide general wellness information about nutrition, exercise, and basic first aid. Note: Not a substitute for professional medical advice.",
                 russianSystemMessage = "Вы предоставляете общую информацию о здоровье, питании и первой помощи. Примечание: Не заменяет консультацию специалиста.",
-                keywords = setOf("health", "diet", "exercise", "vitamins", "headache", "allergy"),
-                russianKeywords = setOf("здоровье", "диета", "упражнения", "витамины", "мигрень", "аллергия"),
+                keywords = setOf("sick", "health", "diet", "exercise", "vitamins", "headache", "allergy"),
+                russianKeywords = setOf("боль", "болезнь", "заболел", "здоровье", "диета", "упражнения", "витамины", "мигрень", "аллергия"),
                 priority = 3
             ),
             RoleConfig(
