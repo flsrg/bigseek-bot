@@ -51,7 +51,7 @@ class MessageHelper(private val bot: Bot) {
             botMessage(
                 chatId = chatId,
                 message = message,
-                buttons = listOf(BotUtils.KeyboardMarkupStop(language))
+                buttons = listOf(BotUtils.KeyboardButtonStop(language))
             )
         ).messageId
 

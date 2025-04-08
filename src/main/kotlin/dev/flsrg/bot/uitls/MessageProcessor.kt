@@ -46,7 +46,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         }
     }
 
-    suspend fun updateOrSend(vararg buttons: BotUtils.ControlKeyboardButton) = bot.apply {
+    suspend fun updateOrSend(vararg buttons: BotUtils.KeyboardButton) = bot.apply {
         when {
             contentBuffer.isNotEmpty() -> {
                 clearReasoning()
@@ -66,7 +66,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     }
 
     private suspend fun Bot.sendReasoning(
-        buttons: List<BotUtils.ControlKeyboardButton> = emptyList(),
+        buttons: List<BotUtils.KeyboardButton> = emptyList(),
         isLastMessage: Boolean = false,
     ) {
         val reasoningMessageId = updateOrSendMessage(
@@ -85,7 +85,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     }
 
     private suspend fun Bot.sendContent(
-        buttons: List<BotUtils.ControlKeyboardButton> = emptyList(),
+        buttons: List<BotUtils.KeyboardButton> = emptyList(),
         isNeedFormatting: Boolean = true,
         skipIfSendFailure: Boolean = false,
         isLastMessage: Boolean = false,
@@ -126,7 +126,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         message: String,
         existingMessageId: Int?,
         parseMode: String? = BotConfig.BOT_MESSAGES_PARSE_MODE,
-        keyboardButtons: List<BotUtils.ControlKeyboardButton> = emptyList(),
+        keyboardButtons: List<BotUtils.KeyboardButton> = emptyList(),
     ): Int? {
         if (message.isEmpty()) return existingMessageId
         if (message == prevMessage) return existingMessageId

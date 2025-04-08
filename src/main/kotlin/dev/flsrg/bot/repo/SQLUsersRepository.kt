@@ -2,8 +2,14 @@ package dev.flsrg.bot.repo
 
 import dev.flsrg.bot.db.Users
 import dev.flsrg.bot.db.model.User
-import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SortOrder
+import org.jetbrains.exposed.sql.SqlExpressionBuilder
+import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.sum
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 
 class SQLUsersRepository: UserRepository {
     override fun recordMessage(userId: Long, username: String?) = transaction {
@@ -44,12 +50,17 @@ class SQLUsersRepository: UserRepository {
 
     override fun getOldestUserDate(): Long = transaction {
         Users.selectAll()
-            .single()[Users.lastActive.min()] ?: System.currentTimeMillis()
+            .orderBy(Users.lastActive to SortOrder.ASC)
+            .limit(1)
+            .singleOrNull()
+            ?.get(Users.lastActive)
+            ?: System.currentTimeMillis()
     }
 
     override fun getTotalMessageCount(): Int = transaction {
-        Users.selectAll()
-            .single()[Users.messagesCount.sum()] ?: 0
+        Users.select(Users.messagesCount.sum())
+            .single()[Users.messagesCount.sum()]
+            ?.toInt() ?: 0
     }
 
     private fun ResultRow.toUser() = User(

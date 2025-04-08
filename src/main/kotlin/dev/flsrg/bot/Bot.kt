@@ -9,8 +9,8 @@ import dev.flsrg.bot.roleplay.RoleConfig
 import dev.flsrg.bot.roleplay.RoleDetector
 import dev.flsrg.bot.uitls.AdminHelper
 import dev.flsrg.bot.uitls.BotUtils
-import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupClearHistory
-import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupStop
+import dev.flsrg.bot.uitls.BotUtils.KeyboardButtonClearHistory
+import dev.flsrg.bot.uitls.BotUtils.KeyboardButtonStop
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.sendTypingAction
 import dev.flsrg.bot.uitls.BotUtils.withRetry
@@ -79,7 +79,10 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
                 }
             } else if (update.hasCallbackQuery()) {
                 val chatId = update.callbackQuery.message.chatId.toString()
-                callbackHelper.handleCallbackQuery(update, lastUsedLanguage[chatId] ?: RU)
+                when {
+                    adminHelper.isAdminCallback(update) -> adminHelper.handleCallbackQuery(update)
+                    else -> callbackHelper.handleCallbackQuery(update, lastUsedLanguage[chatId] ?: RU)
+                }
             }
         }
     }
@@ -163,7 +166,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         .onCompletion { exception ->
             if (exception != null) throw exception
             messageProcessor.updateOrSend(
-                KeyboardMarkupClearHistory(language)
+                KeyboardButtonClearHistory(language)
             )
             finalAssistantMessage = OpenRouterClient.ChatMessage(
                 role = "assistant" ,
@@ -173,8 +176,8 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         .collect {
             sendTypingAction(chatId)
             messageProcessor.updateOrSend(
-                KeyboardMarkupStop(language),
-                KeyboardMarkupClearHistory(language)
+                KeyboardButtonStop(language),
+                KeyboardButtonClearHistory(language)
             )
         }
 

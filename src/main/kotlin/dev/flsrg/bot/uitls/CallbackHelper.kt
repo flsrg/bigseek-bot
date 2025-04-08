@@ -9,8 +9,8 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 
 class CallbackHelper(private val bot: Bot) {
     companion object {
-        private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
-        private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
+        const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
+        const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
     }
     
     fun handleCallbackQuery(update: Update, language: LanguageDetector.Language) {

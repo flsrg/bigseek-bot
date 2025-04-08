@@ -2,7 +2,6 @@ package dev.flsrg.bot.uitls
 
 import dev.flsrg.bot.Bot
 import dev.flsrg.bot.BotConfig
-import dev.flsrg.bot.uitls.Strings
 import dev.flsrg.bot.roleplay.LanguageDetector
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import kotlinx.coroutines.CancellationException
@@ -19,13 +18,10 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 object BotUtils {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
-    private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
-
     fun Bot.editMessage(
         chatId: String, messageId: Int,
         message: String,
-        buttons: List<ControlKeyboardButton>? = null,
+        buttons: List<KeyboardButton>? = null,
         parseMode: String? = null,
     ): EditMessageText {
         return EditMessageText.builder()
@@ -33,39 +29,41 @@ object BotUtils {
             .messageId(messageId)
             .text(message)
             .parseMode(parseMode)
-            .replyMarkup(buttons?.let { createControlKeyboard(it) })
+            .replyMarkup(buttons?.let { createInlineKeyboardMarkup(it) })
             .build()
     }
 
     fun Bot.botMessage(
         chatId: String,
         message: String,
-        buttons: List<ControlKeyboardButton>? = null,
+        buttons: List<KeyboardButton>? = null,
         parseMode: String? = null
     ): SendMessage {
         return SendMessage.builder()
             .chatId(chatId)
             .text(message)
             .parseMode(parseMode)
-            .replyMarkup(buttons?.let { createControlKeyboard(it) })
+            .replyMarkup(buttons?.let { createInlineKeyboardMarkup(it) })
             .build()
     }
 
-    sealed class ControlKeyboardButton(val callback: String): InlineKeyboardButton()
-    class KeyboardMarkupStop(language: LanguageDetector.Language): ControlKeyboardButton(CALLBACK_DATA_FORCE_STOP) {
+    sealed class KeyboardButton(buttonText: String, callback: String?): InlineKeyboardButton() {
         init {
-            text = Strings.KeyboardStopText.get(language)
-            callbackData = callback
-        }
-    }
-    class KeyboardMarkupClearHistory(language: LanguageDetector.Language): ControlKeyboardButton(CALLBACK_DATA_CLEAR_HISTORY) {
-        init {
-            text = Strings.KeyboardClearHistoryText.get(language)
+            text = buttonText
             callbackData = callback
         }
     }
 
-    fun createControlKeyboard(buttons: List<ControlKeyboardButton>): InlineKeyboardMarkup {
+    class KeyboardButtonStop(language: LanguageDetector.Language): KeyboardButton(
+        Strings.KeyboardStopText.get(language),
+        CallbackHelper.CALLBACK_DATA_FORCE_STOP
+    )
+    class KeyboardButtonClearHistory(language: LanguageDetector.Language): KeyboardButton(
+        Strings.KeyboardClearHistoryText.get(language),
+        CallbackHelper.CALLBACK_DATA_CLEAR_HISTORY
+    )
+
+    fun createInlineKeyboardMarkup(buttons: List<KeyboardButton>): InlineKeyboardMarkup {
         return InlineKeyboardMarkup.builder()
             .keyboard(listOf(buttons))
             .build()
