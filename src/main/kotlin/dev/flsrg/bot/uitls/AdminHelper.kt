@@ -1,11 +1,10 @@
-package dev.flsrg.bot
+package dev.flsrg.bot.uitls
 
+import dev.flsrg.bot.Bot
 import dev.flsrg.bot.repo.UserRepository
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import org.telegram.telegrambots.meta.api.objects.Update
-import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
 
 class AdminHelper(
     private val bot: Bot,

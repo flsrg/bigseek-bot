@@ -2,7 +2,7 @@ package dev.flsrg.bot.uitls
 
 import dev.flsrg.bot.Bot
 import dev.flsrg.bot.BotConfig
-import dev.flsrg.bot.Strings
+import dev.flsrg.bot.uitls.Strings
 import dev.flsrg.bot.roleplay.LanguageDetector
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import kotlinx.coroutines.CancellationException

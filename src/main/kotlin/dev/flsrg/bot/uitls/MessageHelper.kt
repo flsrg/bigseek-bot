@@ -1,7 +1,7 @@
-package dev.flsrg.bot
+package dev.flsrg.bot.uitls
 
+import dev.flsrg.bot.Bot
 import dev.flsrg.bot.roleplay.LanguageDetector
-import dev.flsrg.bot.uitls.BotUtils
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.decapitalizeFirstChar
 import dev.flsrg.bot.uitls.BotUtils.editMessage
@@ -35,6 +35,10 @@ class MessageHelper(private val bot: Bot) {
     }
 
     private val messages = ConcurrentHashMap<String, Pair<Int, String>>()
+
+    fun sendStartMessage(chatId: String, language: LanguageDetector.Language) = bot.apply {
+        execute(botMessage(chatId, Strings.StartMessage.get(language)))
+    }
 
     fun sendRespondingMessage(chatId: String, isThinking: Boolean, language: LanguageDetector.Language) = bot.apply {
         val message = if(isThinking) {

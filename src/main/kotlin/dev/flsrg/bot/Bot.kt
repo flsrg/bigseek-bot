@@ -1,18 +1,21 @@
 package dev.flsrg.bot
 
-import dev.flsrg.bot.MessageHelper.Companion.isStartMessage
-import dev.flsrg.bot.MessageHelper.Companion.isThinkingMessage
+import dev.flsrg.bot.uitls.MessageHelper.Companion.isStartMessage
+import dev.flsrg.bot.uitls.MessageHelper.Companion.isThinkingMessage
 import dev.flsrg.bot.repo.SQLUsersRepository
 import dev.flsrg.bot.roleplay.LanguageDetector
 import dev.flsrg.bot.roleplay.LanguageDetector.Language.RU
 import dev.flsrg.bot.roleplay.RoleConfig
 import dev.flsrg.bot.roleplay.RoleDetector
+import dev.flsrg.bot.uitls.AdminHelper
 import dev.flsrg.bot.uitls.BotUtils
 import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupClearHistory
 import dev.flsrg.bot.uitls.BotUtils.KeyboardMarkupStop
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.sendTypingAction
 import dev.flsrg.bot.uitls.BotUtils.withRetry
+import dev.flsrg.bot.uitls.CallbackHelper
+import dev.flsrg.bot.uitls.MessageHelper
 import dev.flsrg.bot.uitls.MessageProcessor
 import dev.flsrg.llmpollingclient.client.OpenRouterClient
 import dev.flsrg.llmpollingclient.client.OpenRouterConfig
@@ -23,34 +26,29 @@ import kotlinx.coroutines.flow.sample
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
-import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.objects.Update
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 import java.util.concurrent.ConcurrentHashMap
 
 @OptIn(FlowPreview::class)
 class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToken) {
     companion object {
-        private const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
-        private const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
         private const val JOB_CLEANUP_INTERVAL = 5 * 60 * 1000L
     }
 
     private val log: Logger = LoggerFactory.getLogger(javaClass)
 
     private val apiKey = System.getenv("OPENROUTER_API_KEY")!!
-    private val openRouterDeepseekClient = OpenRouterClient(OpenRouterConfig(apiKey = apiKey))
+    val client = OpenRouterClient(OpenRouterConfig(apiKey = apiKey))
+
     private val messageHelper = MessageHelper(this)
-    private val usrRepo = SQLUsersRepository()
-    private val adminHelper = AdminHelper(this, adminUserId, usrRepo)
+    private val adminHelper = AdminHelper(this, adminUserId, SQLUsersRepository())
     private val roleDetector = RoleDetector(RoleConfig.allRoles)
+    private val callbackHelper = CallbackHelper(this)
 
     private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val chatJobs = ConcurrentHashMap<String, Job>()
     private val rateLimits = ConcurrentHashMap<String, Long>()
-
-    private var currentLanguage = RU
+    private val lastUsedLanguage = ConcurrentHashMap<String, LanguageDetector.Language>()
+    val chatJobs = ConcurrentHashMap<String, Job>()
 
     // Cleanup mechanism to remove completed jobs
     init {
@@ -76,18 +74,14 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
 
                 when {
                     adminHelper.isAdminCommand(update) -> adminHelper.handleAdminCommand(update)
-                    isStartMessage(message) -> handleStartMessage(chatId)
-                    isThinkingMessage(message) -> handleMessage(true, update)
-                    else -> handleMessage(false, update)
+                    isStartMessage(message) -> messageHelper.sendStartMessage(chatId, RU)
+                    else -> handleMessage(isThinkingMessage(message), update)
                 }
             } else if (update.hasCallbackQuery()) {
-                handleCallbackQuery(update)
+                val chatId = update.callbackQuery.message.chatId.toString()
+                callbackHelper.handleCallbackQuery(update, lastUsedLanguage[chatId] ?: RU)
             }
         }
-    }
-
-    private fun handleStartMessage(chatId: String) {
-        execute(botMessage(chatId, "Го"))
     }
 
     private fun handleMessage(isThinking: Boolean, update: Update) {
@@ -98,9 +92,11 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         val chatId = update.message.chat.id.toString()
         val userName = update.message.from.userName
         val userMessage = update.message.text
+        val lang = LanguageDetector.detectLanguage(userMessage)
+        lastUsedLanguage[chatId] = lang
 
         if (startMillis - rateLimits.getOrDefault(chatId, 0) < BotConfig.MESSAGE_RATE_LIMIT) {
-            messageHelper.sendRateLimitMessage(chatId, currentLanguage)
+            messageHelper.sendRateLimitMessage(chatId, lang)
             return
         }
         rateLimits[chatId] = startMillis
@@ -109,8 +105,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
 
         val newJob = rootScope.launch {
             sendTypingAction(chatId)
-            currentLanguage = LanguageDetector.detectLanguage(userMessage)
-            messageHelper.sendRespondingMessage(chatId, isThinking, currentLanguage)
+            messageHelper.sendRespondingMessage(chatId, isThinking, lang)
 
             val messageProcessor = MessageProcessor(this@Bot, chatId)
             log.info("Responding (${if (isThinking) "R1" else "V3"}) to ${update.message.from.userName}")
@@ -121,11 +116,11 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
                     messageProcessor.clear()
                     adminHelper.updateUserMessage(userId, userName, OpenRouterClient.ChatMessage(role = "user", content = userMessage))
 
-                    val finalAssistantMessage = askDeepseek(chatId, isThinking, userMessage, messageProcessor, currentLanguage)
+                    val finalAssistantMessage = askDeepseek(chatId, isThinking, userMessage, messageProcessor, lang)
                     adminHelper.updateUserMessage(userId, userName, finalAssistantMessage)
                 }
             } catch (e: Exception) {
-                val errorMessage = BotUtils.errorToMessage(e, currentLanguage)
+                val errorMessage = BotUtils.errorToMessage(e, lang)
                 execute(botMessage(chatId, errorMessage))
 
                 log.error("Error processing message", e)
@@ -153,9 +148,9 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         val model = if (isThinking) OpenRouterConfig.DEEPSEEK_R1 else OpenRouterConfig.DEEPSEEK_V3
         var finalAssistantMessage: OpenRouterClient.ChatMessage? = null
         val role = roleDetector.detectRole(userMessage, language)
-        log.info("Role detected: $role for $language")
+        log.info("Role detected: ${role.roleName} for $language")
 
-        openRouterDeepseekClient.askChat(
+        client.askChat(
             chatId = chatId,
             model = model,
             message = userMessage,
@@ -168,7 +163,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         .onCompletion { exception ->
             if (exception != null) throw exception
             messageProcessor.updateOrSend(
-                KeyboardMarkupClearHistory(currentLanguage)
+                KeyboardMarkupClearHistory(language)
             )
             finalAssistantMessage = OpenRouterClient.ChatMessage(
                 role = "assistant" ,
@@ -178,8 +173,8 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         .collect {
             sendTypingAction(chatId)
             messageProcessor.updateOrSend(
-                KeyboardMarkupStop(currentLanguage),
-                KeyboardMarkupClearHistory(currentLanguage)
+                KeyboardMarkupStop(language),
+                KeyboardMarkupClearHistory(language)
             )
         }
 
@@ -189,72 +184,5 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
     private fun messageIsEmpty(message: OpenRouterClient.ChatResponse): Boolean {
         return message.choices.firstOrNull()?.delta?.reasoning?.isEmpty() != false
                 && message.choices.firstOrNull()?.delta?.content?.isEmpty() != false
-    }
-
-    private fun handleCallbackQuery(update: Update) {
-        val callback = update.callbackQuery
-        val chatId = callback.message.chatId.toString()
-        val callbackId = callback.id
-
-        when (callback.data) {
-            CALLBACK_DATA_FORCE_STOP -> {
-                forceStop(chatId, callbackId)
-            }
-            CALLBACK_DATA_CLEAR_HISTORY -> {
-                forceStop(chatId, callbackId)
-                clearHistory(chatId, callbackId)
-            }
-        }
-    }
-
-    private fun forceStop(chatId: String, callbackId: String) {
-        val job = chatJobs[chatId]
-
-        try {
-            if (job != null) {
-                job.cancel(BotUtils.UserStoppedException())
-
-                execute(
-                    AnswerCallbackQuery.builder()
-                        .callbackQueryId(callbackId)
-                        .text(Strings.CallbackStopSuccessAnswer.get(currentLanguage))
-                        .build()
-                )
-            } else {
-                execute(
-                    AnswerCallbackQuery.builder()
-                        .callbackQueryId(callbackId)
-                        .text(Strings.CallbackStopNothingRunningAnswer.get(currentLanguage))
-                        .build()
-                )
-            }
-        } catch (e: TelegramApiException) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun clearHistory(chatId: String, callbackId: String) {
-        // Clear the chat history
-        openRouterDeepseekClient.clearHistory(chatId)
-
-        // Send confirmation to the user
-        execute(
-            AnswerCallbackQuery.builder()
-                .callbackQueryId(callbackId)
-                .text(Strings.CallbackClearHistorySuccessAnswer.get(currentLanguage))
-                .build()
-        )
-
-        // Optionally, send a message to the chat confirming the history is cleared
-        try {
-            execute(
-                SendMessage.builder()
-                    .chatId(chatId)
-                    .text(Strings.CallbackClearHistorySuccessMessage.get(currentLanguage))
-                    .build()
-            )
-        } catch (e: TelegramApiException) {
-            e.printStackTrace()
-        }
     }
 }

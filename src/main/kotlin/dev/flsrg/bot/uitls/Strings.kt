@@ -1,4 +1,4 @@
-package dev.flsrg.bot
+package dev.flsrg.bot.uitls
 
 import dev.flsrg.bot.roleplay.LanguageDetector
 
@@ -11,6 +11,7 @@ sealed class Strings(
         LanguageDetector.Language.RU -> ru.format(*args)
     }
 
+    object StartMessage : Strings("Го", "Let's go")
     object ThinkingMessage : Strings("Думаю...", "Thinking...")
     object ResponseMessage : Strings("Так, ну смотри", "So, well, look")
     object RateLimitMessage : Strings("Превышен лимит запросов. Подожди пока", "Rate limit exceeded. Wait")

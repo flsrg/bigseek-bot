@@ -1,6 +1,6 @@
 package dev.flsrg.bot.roleplay
 
-import dev.flsrg.bot.MessageHelper
+import dev.flsrg.bot.uitls.MessageHelper
 import java.util.Locale
 
 object LanguageDetector {
