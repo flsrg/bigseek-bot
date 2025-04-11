@@ -164,7 +164,6 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
 
         historyManager.addMessage(userId, ChatMessage(role = "user", content = userMessage))
         val messages = historyManager.getHistory(userId)
-        log.info("messsages: $messages")
 
         val systemMessage = if (language == RU) {
             role.russianSystemMessage!!

@@ -3,6 +3,7 @@ package dev.flsrg.bot.db
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.Table
 import org.jetbrains.exposed.sql.Column
+import java.time.Instant
 
 data class User(
     val id: Long,
@@ -23,10 +24,16 @@ object Users : Table("users") {
 @Serializable
 data class HistMessage(
     val role: String,
-    val content: String
+    val content: String,
+    val timestamp: Long = Instant.now().toEpochMilli()
 )
 
-object MessageHistTable : Table("chat_hist") {
-    val userId = long("user_id").uniqueIndex()
-    val messages = text("messages")
+object MessageHistTable : Table("messages") {
+    val id = long("id").autoIncrement()
+    val userId = long("user_id").index()  // Index for faster user queries
+    val role = text("role")
+    val content = text("content")
+    val timestamp = long("timestamp")
+
+    override val primaryKey = PrimaryKey(id)
 }

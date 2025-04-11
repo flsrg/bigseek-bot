@@ -130,7 +130,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         keyboardButtons: List<BotUtils.KeyboardButton> = emptyList(),
     ): Int? {
         if (message.isEmpty()) return existingMessageId
-        if (message == prevMessage) return existingMessageId
+        if (message.length == prevMessage?.length) return existingMessageId
 
         return withRetry(maxRetries = 5, initialDelay = 5000, origin = "execute updateOrSendMessage") {
             if (existingMessageId == null) {

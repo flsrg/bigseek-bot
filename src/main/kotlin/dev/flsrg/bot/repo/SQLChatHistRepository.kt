@@ -1,45 +1,31 @@
 package dev.flsrg.bot.repo
 
-import dev.flsrg.bot.BotConfig
 import dev.flsrg.bot.db.HistMessage
 import dev.flsrg.bot.db.MessageHistTable
-import kotlinx.serialization.json.Json
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.Expression
-import org.jetbrains.exposed.sql.SqlExpressionBuilder
-import org.jetbrains.exposed.sql.deleteWhere
+import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
-import org.jetbrains.exposed.sql.upsert
-import org.slf4j.LoggerFactory
 
 class SQLChatHistRepository(database: Database): ChatHistRepository(database) {
     override fun getHist(userId: Long): List<HistMessage> {
-        return MessageHistTable.select(Expression.build { MessageHistTable.userId eq userId })
-            .singleOrNull()
-            ?.getOrNull(MessageHistTable.messages)
-            ?.let { Json.decodeFromString<List<HistMessage>>(it) }
-            ?: emptyList()
+        return MessageHistTable.selectAll()
+            .where { MessageHistTable.userId eq userId }
+            .orderBy(MessageHistTable.timestamp to SortOrder.ASC)
+            .map {
+                HistMessage(
+                    role = it[MessageHistTable.role],
+                    content = it[MessageHistTable.content],
+                    timestamp = it[MessageHistTable.timestamp]
+                )
+            }
     }
 
     override fun addMessage(userId: Long, message: HistMessage) {
         transaction(database) {
-            val currentMessages = getHist(userId).toMutableList()
-            currentMessages.add(message)
-            LoggerFactory.getLogger(javaClass).info("current $currentMessages")
-
-            val trimmedMessages = if (currentMessages.size > BotConfig.MAX_HISTORY_SIZE) {
-                currentMessages.drop(1)
-            } else {
-                currentMessages
-            }
-
-
-            val messagesJson = Json.encodeToString(trimmedMessages)
-            LoggerFactory.getLogger(javaClass).info("Adding $message to user $userId \n encoded $messagesJson")
-
-            MessageHistTable.upsert {
-                it[MessageHistTable.userId] = userId
-                it[messages] = messagesJson
+            MessageHistTable.insert {
+                it[this.userId] = userId
+                it[role] = message.role
+                it[content] = message.content
+                it[timestamp] = message.timestamp
             }
         }
     }
@@ -54,11 +40,9 @@ class SQLChatHistRepository(database: Database): ChatHistRepository(database) {
         val currentMessages = getHist(userId).toMutableList()
         if (currentMessages.isNotEmpty()) {
             currentMessages.removeLast()
-            val messagesJson = Json.encodeToString(currentMessages)
 
             MessageHistTable.upsert {
-                it[MessageHistTable.userId] = userId
-                it[messages] = messagesJson
+                currentMessages
             }
         }
     }
@@ -67,11 +51,9 @@ class SQLChatHistRepository(database: Database): ChatHistRepository(database) {
         val currentMessages = getHist(userId).toMutableList()
         if (currentMessages.isNotEmpty()) {
             currentMessages.removeFirst()
-            val messagesJson = Json.encodeToString(currentMessages)
 
             MessageHistTable.upsert {
-                it[MessageHistTable.userId] = userId
-                it[messages] = messagesJson
+                currentMessages
             }
         }
     }

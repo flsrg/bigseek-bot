@@ -2,12 +2,9 @@ package dev.flsrg.bot.hist
 
 import dev.flsrg.bot.BotConfig
 import dev.flsrg.bot.db.HistMessage
-import dev.flsrg.bot.db.MessageHistTable
 import dev.flsrg.bot.repo.ChatHistRepository
 import dev.flsrg.bot.repo.UserRepository
 import dev.flsrg.llmpollingclient.model.ChatMessage
-import kotlinx.serialization.json.Json
-import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
@@ -21,17 +18,14 @@ class HistoryManager(private val histRepository: ChatHistRepository, usersReposi
         // Prefetch existing histories from database on startup
         transaction(histRepository.database) {
             val userIdsToFetch = usersRepository.getActiveUsers(14).map { it.id }
+            val hist = userIdsToFetch.associate { userId ->
+                userId to histRepository.getHist(userId)
+            }
+            hist.forEach { (userId, messages) ->
+                chatHistories[userId] = LinkedBlockingDeque(messages.map { it.toChatMessage() })
+            }
 
-            MessageHistTable.selectAll()
-                .where { MessageHistTable.userId inList userIdsToFetch }
-                .forEach { row ->
-                    val chatId = row[MessageHistTable.userId]
-                    val messages = Json.decodeFromString<List<ChatMessage>>(row[MessageHistTable.messages])
-                    log.info("Fetched messages $messages")
-                    chatHistories[chatId] = LinkedBlockingDeque(messages)
-                }
-
-            log.info("Fetched ${chatHistories.size} histories for ${userIdsToFetch.size} users")
+            log.info("Fetched ${hist.values.sumOf { it.size }} histories for ${hist.keys.size} users")
         }
     }
 
