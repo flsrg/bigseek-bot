@@ -16,6 +16,8 @@ dependencies {
 
     implementation("org.slf4j:slf4j-api:2.0.7")
     implementation("ch.qos.logback:logback-classic:1.5.6")
+    implementation("org.codehaus.janino:janino:3.1.12")
+
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 

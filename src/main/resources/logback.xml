@@ -1,11 +1,27 @@
 <configuration>
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <!-- Define Console Appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <root level="DEBUG">
-        <appender-ref ref="CONSOLE" />
-    </root>
+    <!-- Environment-Specific Logging -->
+    <if condition='"dev".equals(System.getenv("APP_ENV"))'>
+        <then>
+            <!-- Local Development: DEBUG Logs -->
+            <root level="DEBUG">
+                <appender-ref ref="STDOUT"/>
+            </root>
+            <logger name="Exposed" level="DEBUG"/> <!-- SQL Query Logs -->
+            <logger name="dev.flsrg.bot.db.Database" level="DEBUG"/> <!-- Your Database Class -->
+        </then>
+        <else>
+            <!-- Production: INFO Logs -->
+            <root level="INFO">
+                <appender-ref ref="STDOUT"/>
+            </root>
+            <logger name="Exposed" level="WARN"/> <!-- Suppress SQL DEBUG logs -->
+        </else>
+    </if>
 </configuration>
