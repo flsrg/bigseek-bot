@@ -1,6 +1,7 @@
 package dev.flsrg.bot.hist
 
 import dev.flsrg.bot.BotConfig
+import dev.flsrg.bot.db.Database
 import dev.flsrg.bot.db.HistMessage
 import dev.flsrg.bot.repo.ChatHistRepository
 import dev.flsrg.bot.repo.UserRepository
@@ -9,6 +10,7 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingDeque
+import kotlin.math.min
 
 class HistoryManager(private val histRepository: ChatHistRepository, usersRepository: UserRepository) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -37,26 +39,28 @@ class HistoryManager(private val histRepository: ChatHistRepository, usersReposi
     }
 
     fun addMessage(userId: Long, message: ChatMessage) {
-        chatHistories
-            .getOrPut(userId) { LinkedBlockingDeque() }
-            .apply {
-                addLast(message)
-                while (size > BotConfig.MAX_HISTORY_SIZE) {
-                    removeFirst()
-                }
-            }
+        val hist = chatHistories.getOrPut(userId) { LinkedBlockingDeque() }
+        hist.addLast(message)
 
-        histRepository.addMessage(userId.toLong(), message.toHistMessage())
+        var histToDrop = 0
+        if (hist.size > BotConfig.MAX_HISTORY_SIZE) {
+            histToDrop = min(hist.size - BotConfig.MAX_HISTORY_SIZE, 0)
+            hist.drop(histToDrop)
+        }
+
+        transaction(Database.database) {
+            histRepository.addMessage(userId, message.toHistMessage())
+
+            if (histToDrop > 0) {
+                histRepository.drop(userId, histToDrop)
+            }
+        }
+
     }
 
     fun clearHistory(userId: Long) {
         chatHistories.remove(userId)
         histRepository.clearHistory(userId)
-    }
-
-    fun removeLast(userId: Long) {
-        chatHistories[userId]?.removeLast()
-        histRepository.removeLast(userId)
     }
 
     private fun HistMessage.toChatMessage() = ChatMessage(

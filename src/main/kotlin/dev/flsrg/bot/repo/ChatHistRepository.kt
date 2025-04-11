@@ -7,6 +7,6 @@ abstract class ChatHistRepository(val database: Database) {
     abstract fun getHist(userId: Long): List<HistMessage>
     abstract fun addMessage(userId: Long, message: HistMessage)
     abstract fun clearHistory(userId: Long)
-    abstract fun removeLast(userId: Long)
+    abstract fun drop(userId: Long, toDrop: Int)
     abstract fun removeFirst(userId: Long)
 }

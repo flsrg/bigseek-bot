@@ -36,10 +36,10 @@ class SQLChatHistRepository(database: Database): ChatHistRepository(database) {
         }
     }
 
-    override fun removeLast(userId: Long) {
+    override fun drop(userId: Long, toDrop: Int) {
         val currentMessages = getHist(userId).toMutableList()
         if (currentMessages.isNotEmpty()) {
-            currentMessages.removeLast()
+            currentMessages.drop(toDrop)
 
             MessageHistTable.upsert {
                 currentMessages

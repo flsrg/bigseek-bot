@@ -16,8 +16,8 @@ sealed class Strings(
     object ThinkingCompletedMessage : Strings("Подумал, получается:", "Thought and it's:")
     object ResponseMessage : Strings("Так, ну смотри", "So, well, look")
     object RateLimitMessage : Strings("Превышен лимит запросов. Подожди пока", "Rate limit exceeded. Wait")
-    object KeyboardStopText : Strings("🚫 Остановись", "🚫 Stop")
-    object KeyboardClearHistoryText : Strings("🧹 Забудь все", "🧹 Clear history")
+    object KeyboardStopText : Strings("🚫 Остановись", "🚫 Stop it")
+    object KeyboardClearHistoryText : Strings("🧹 Забудь все", "🧹 Forgot all")
 
     object CallbackStopSuccessAnswer : Strings("Остановился!", "Stopped!")
     object CallbackStopNothingRunningAnswer : Strings("Нечего останавливать", "Nothing to stop")
