@@ -1,16 +1,15 @@
 package dev.flsrg.bot.uitls
 
-import dev.flsrg.bot.Bot
+import dev.flsrg.bot.LlmPollingBot
 import dev.flsrg.bot.repo.UserRepository
 import dev.flsrg.bot.uitls.BotUtils.botMessage
-import dev.flsrg.llmpollingclient.model.ChatMessage
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.ParseMode
 import org.telegram.telegrambots.meta.api.objects.Update
 import java.util.*
 
 class AdminHelper(
-    private val bot: Bot,
+    private val bot: LlmPollingBot,
     private val adminUserId: Long,
     private val userRepository: UserRepository,
 ) {
@@ -34,7 +33,7 @@ class AdminHelper(
         userRepository.recordMessage(userId, userName)
     }
 
-    fun sendStatistics(adminChatId: String) = bot.apply {
+    private fun sendStatistics(adminChatId: String) = bot.apply {
         try {
             val stats = """
                 📊 *Bot Statistics Report*
@@ -46,7 +45,7 @@ class AdminHelper(
                 👤 *Most Active User:* ${getMostActiveUser()}
             """.trimIndent()
 
-            execute(
+            onExecute(
                 botMessage(
                     chatId = adminChatId,
                     message = stats,
@@ -55,7 +54,7 @@ class AdminHelper(
                 )
             )
         } catch (e: Exception) {
-            execute(
+            onExecute(
                 botMessage(
                     chatId = adminChatId,
                     message = "❌ Error generating statistics: ${e.message}"
@@ -79,7 +78,7 @@ class AdminHelper(
         return "${mostActive.username ?: "Anonymous"} (${mostActive.messageCount} messages)"
     }
 
-    private class UsersListKeyboardButton(): BotUtils.KeyboardButton(
+    private class UsersListKeyboardButton : BotUtils.KeyboardButton(
         "Show users list",
         CALLBACK_DATA_USERS_LIST
     )
@@ -108,14 +107,14 @@ class AdminHelper(
             """.trimIndent()
         }
 
-        execute(
+        onExecute(
             AnswerCallbackQuery.builder()
                 .callbackQueryId(callbackId)
                 .text("Ok")
                 .build()
         )
 
-        execute(
+        onExecute(
             botMessage(
                 chatId = chatId,
                 message = users,

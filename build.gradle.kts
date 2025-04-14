@@ -39,20 +39,6 @@ kotlin {
     jvmToolchain(21)
 }
 
-tasks.withType<Jar> {
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-
-    manifest {
-        attributes(
-            "Main-Class" to "dev.flsrg.bot.MainKt",
-            "Implementation-Title" to project.name,
-            "Implementation-Version" to project.version
-        )
-    }
-    // Include dependencies in the JAR
-    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
-}
-
 tasks.processResources {
     filesMatching("version.properties") {
         expand(project.properties)

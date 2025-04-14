@@ -1,13 +1,13 @@
 package dev.flsrg.bot.uitls
 
-import dev.flsrg.bot.Bot
+import dev.flsrg.bot.LlmPollingBot
 import dev.flsrg.bot.roleplay.LanguageDetector
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage
 import org.telegram.telegrambots.meta.api.objects.Update
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException
 
-class CallbackHelper(private val bot: Bot) {
+class CallbackHelper(private val llmPollingBot: LlmPollingBot) {
     companion object {
         const val CALLBACK_DATA_FORCE_STOP = "FORCESTOP"
         const val CALLBACK_DATA_CLEAR_HISTORY = "CLEARHISTORY"
@@ -30,21 +30,21 @@ class CallbackHelper(private val bot: Bot) {
         }
     }
 
-    private fun forceStop(chatId: String, callbackId: String, language: LanguageDetector.Language) = bot.apply {
+    private fun forceStop(chatId: String, callbackId: String, language: LanguageDetector.Language) = llmPollingBot.apply {
         val job = chatJobs[chatId]
 
         try {
             if (job != null) {
                 job.cancel(BotUtils.UserStoppedException())
 
-                execute(
+                onExecute(
                     AnswerCallbackQuery.builder()
                         .callbackQueryId(callbackId)
                         .text(Strings.CallbackStopSuccessAnswer.get(language))
                         .build()
                 )
             } else {
-                execute(
+                onExecute(
                     AnswerCallbackQuery.builder()
                         .callbackQueryId(callbackId)
                         .text(Strings.CallbackStopNothingRunningAnswer.get(language))
@@ -56,12 +56,12 @@ class CallbackHelper(private val bot: Bot) {
         }
     }
 
-    private fun clearHistory(userId: Long, chatId: String, callbackId: String, language: LanguageDetector.Language) = bot.apply {
+    private fun clearHistory(userId: Long, chatId: String, callbackId: String, language: LanguageDetector.Language) = llmPollingBot.apply {
         // Clear the chat history
         historyManager.clearHistory(userId)
 
         // Send confirmation to the user
-        execute(
+        onExecute(
             AnswerCallbackQuery.builder()
                 .callbackQueryId(callbackId)
                 .text(Strings.CallbackClearHistorySuccessAnswer.get(language))
@@ -70,7 +70,7 @@ class CallbackHelper(private val bot: Bot) {
 
         // Optionally, send a message to the chat confirming the history is cleared
         try {
-            execute(
+            onExecute(
                 SendMessage.builder()
                     .chatId(chatId)
                     .text(Strings.CallbackClearHistorySuccessMessage.get(language))

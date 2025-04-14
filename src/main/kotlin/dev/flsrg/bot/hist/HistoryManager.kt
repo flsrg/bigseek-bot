@@ -12,7 +12,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.LinkedBlockingDeque
 import kotlin.math.min
 
-class HistoryManager(private val histRepository: ChatHistRepository, usersRepository: UserRepository) {
+class HistoryManager(
+    private val botConfig: BotConfig,
+    private val histRepository: ChatHistRepository,
+    usersRepository: UserRepository
+) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val chatHistories = ConcurrentHashMap<Long, LinkedBlockingDeque<ChatMessage>>()
 
@@ -20,9 +24,7 @@ class HistoryManager(private val histRepository: ChatHistRepository, usersReposi
         // Prefetch existing histories from database on startup
         transaction(histRepository.database) {
             val userIdsToFetch = usersRepository.getActiveUsers(14).map { it.id }
-            val hist = userIdsToFetch.associate { userId ->
-                userId to histRepository.getHist(userId)
-            }
+            val hist = userIdsToFetch.associateWith { userId -> histRepository.getHist(userId) }
             hist.forEach { (userId, messages) ->
                 chatHistories[userId] = LinkedBlockingDeque(messages.map { it.toChatMessage() })
             }
@@ -33,7 +35,7 @@ class HistoryManager(private val histRepository: ChatHistRepository, usersReposi
 
     fun getHistory(userId: Long): List<ChatMessage> {
         return chatHistories[userId]?.toList()
-            ?: histRepository.getHist(userId.toLong()).map { it.toChatMessage() }.also {
+            ?: histRepository.getHist(userId).map { it.toChatMessage() }.also {
                 chatHistories[userId] = LinkedBlockingDeque(it)
             }
     }
@@ -43,8 +45,8 @@ class HistoryManager(private val histRepository: ChatHistRepository, usersReposi
         hist.addLast(message)
 
         var histToDrop = 0
-        if (hist.size > BotConfig.MAX_HISTORY_SIZE) {
-            histToDrop = min(hist.size - BotConfig.MAX_HISTORY_SIZE, 0)
+        if (hist.size > botConfig.maxHistorySize) {
+            histToDrop = min(hist.size - botConfig.maxHistorySize, 0)
             hist.drop(histToDrop)
         }
 

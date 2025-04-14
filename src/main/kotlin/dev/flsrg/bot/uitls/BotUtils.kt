@@ -1,6 +1,6 @@
 package dev.flsrg.bot.uitls
 
-import dev.flsrg.bot.Bot
+import dev.flsrg.bot.LlmPollingBot
 import dev.flsrg.bot.BotConfig
 import dev.flsrg.bot.roleplay.LanguageDetector
 import kotlinx.coroutines.CancellationException
@@ -17,7 +17,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 object BotUtils {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    fun Bot.editMessage(
+    fun editMessage(
         chatId: String, messageId: Int,
         message: String,
         buttons: List<KeyboardButton>? = null,
@@ -32,7 +32,7 @@ object BotUtils {
             .build()
     }
 
-    fun Bot.botMessage(
+    fun botMessage(
         chatId: String,
         message: String,
         buttons: List<KeyboardButton>? = null,
@@ -62,7 +62,7 @@ object BotUtils {
         CallbackHelper.CALLBACK_DATA_CLEAR_HISTORY
     )
 
-    fun createInlineKeyboardMarkup(buttons: List<KeyboardButton>): InlineKeyboardMarkup {
+    private fun createInlineKeyboardMarkup(buttons: List<KeyboardButton>): InlineKeyboardMarkup {
         return InlineKeyboardMarkup.builder()
             .keyboard(listOf(buttons))
             .build()
@@ -104,9 +104,9 @@ object BotUtils {
         }
     }
 
-    class ExceptionEmptyResponse() : Exception("Empty response")
+    class ExceptionEmptyResponse : Exception("Empty response")
 
-    fun getCallerMethodName(): String? {
+    private fun getCallerMethodName(): String? {
         return StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE).walk { frames ->
             frames.skip(1).findFirst().map { it.methodName }.orElse(null)
         }
@@ -116,7 +116,7 @@ object BotUtils {
         return if (exception is CancellationException) {
             when (exception) {
                 is UserStoppedException -> return Strings.StopErrorUser.get(language)
-                is NewMessageStopException -> return Strings.StopErrorUser.get(language)
+                is NewMessageStopException -> return Strings.StopErrorNewMessage.get(language)
                 else -> "error: ${exception.message}"
             }
         } else {
@@ -127,8 +127,8 @@ object BotUtils {
     class UserStoppedException: CancellationException("User requested stop")
     class NewMessageStopException: CancellationException("New message in chat")
 
-    fun Bot.sendTypingAction(chatId: String) {
-        execute(
+    fun LlmPollingBot.sendTypingAction(chatId: String) {
+        onExecute(
             SendChatAction.builder()
                 .chatId(chatId)
                 .action(ActionType.TYPING.name)

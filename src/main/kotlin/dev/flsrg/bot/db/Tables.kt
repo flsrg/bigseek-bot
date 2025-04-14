@@ -29,7 +29,7 @@ data class HistMessage(
 )
 
 object MessageHistTable : Table("messages") {
-    val id = long("id").autoIncrement()
+    private val id = long("id").autoIncrement()
     val userId = long("user_id").index()  // Index for faster user queries
     val role = text("role")
     val content = text("content")

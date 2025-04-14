@@ -20,7 +20,7 @@ import dev.flsrg.bot.uitls.BotUtils.withRetry
 import dev.flsrg.bot.uitls.CallbackHelper
 import dev.flsrg.bot.uitls.MessageHelper
 import dev.flsrg.bot.uitls.MessageProcessor
-import dev.flsrg.llmpollingclient.client.OpenRouterClient
+import dev.flsrg.llmpollingclient.client.Client
 import dev.flsrg.llmpollingclient.client.OpenRouterConfig
 import dev.flsrg.llmpollingclient.model.ChatMessage
 import dev.flsrg.llmpollingclient.model.ChatResponse
@@ -31,27 +31,31 @@ import kotlinx.coroutines.flow.sample
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.bots.TelegramLongPollingBot
+import org.telegram.telegrambots.meta.api.methods.BotApiMethod
 import org.telegram.telegrambots.meta.api.objects.Update
+import java.io.Serializable
 import java.util.concurrent.ConcurrentHashMap
 
 @OptIn(FlowPreview::class)
-class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToken) {
-    companion object {
-        private const val JOB_CLEANUP_INTERVAL = 5 * 60 * 1000L
-        const val BOT_USER_NAME = "BigDick"
-    }
-
+class LlmPollingBot(
+    botToken: String?,
+    adminUserId: Long,
+    private val botUsername: String,
+    private val client: Client,
+    private val botConfig: BotConfig,
+) : TelegramLongPollingBot(botToken), BotHandler {
     private val log: Logger = LoggerFactory.getLogger(javaClass)
-
-    private val apiKey = System.getenv("OPENROUTER_API_KEY")!!
-    val client = OpenRouterClient(OpenRouterConfig(apiKey = apiKey))
 
     private val messageHelper = MessageHelper(this)
     private val usersRepository = SQLUsersRepository()
     private val adminHelper = AdminHelper(this, adminUserId, usersRepository)
     private val roleDetector = RoleDetector(RoleConfig.allRoles)
     private val callbackHelper = CallbackHelper(this)
-    val historyManager = HistoryManager(SQLChatHistRepository(Database.database), usersRepository)
+    val historyManager = HistoryManager(
+        botConfig = botConfig,
+        histRepository = SQLChatHistRepository(Database.database),
+        usersRepository = usersRepository,
+    )
 
     private val rootScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val rateLimits = ConcurrentHashMap<String, Long>()
@@ -62,17 +66,16 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
     init {
         rootScope.launch {
             while (isActive) {
-                delay(JOB_CLEANUP_INTERVAL) // Run every 5 minutes
+                delay(botConfig.jobCleanupInterval)
                 chatJobs.entries.removeAll { (_, job) -> job.isCompleted }
             }
         }
+        Database.init(botUsername)
     }
 
-    override fun getBotUsername() = BOT_USER_NAME
+    override fun getBotUsername() = botUsername
 
-    override fun onRegister() {
-        super.onRegister()
-    }
+    override fun <T : Serializable?, Method : BotApiMethod<T>?> onExecute(method: Method): T = execute(method)
 
     override fun onUpdateReceived(update: Update) {
         rootScope.launch(Dispatchers.IO) {
@@ -97,7 +100,6 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
 
     private fun handleMessage(isThinking: Boolean, update: Update) {
         val startMillis = System.currentTimeMillis()
-        var contentSize = 0
 
         val userId = update.message.from.id
         val chatId = update.message.chat.id.toString()
@@ -106,7 +108,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         val lang = LanguageDetector.detectLanguage(userMessage)
         lastUsedLanguage[chatId] = lang
 
-        if (startMillis - rateLimits.getOrDefault(chatId, 0) < BotConfig.MESSAGE_RATE_LIMIT) {
+        if (startMillis - rateLimits.getOrDefault(chatId, 0) < botConfig.messageRateLimit) {
             messageHelper.sendRateLimitMessage(chatId, lang)
             return
         }
@@ -118,7 +120,11 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
             sendTypingAction(chatId)
             messageHelper.sendRespondingMessage(chatId, isThinking, lang)
 
-            val messageProcessor = MessageProcessor(this@Bot, chatId)
+            val messageProcessor = MessageProcessor(
+                botConfig = botConfig,
+                botHandler = this@LlmPollingBot,
+                chatId = chatId,
+            )
             log.info("Responding (${if (isThinking) "R1" else "V3"}) to ${update.message.from.userName}")
 
             try {
@@ -132,17 +138,14 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
                 }
             } catch (e: Exception) {
                 val errorMessage = BotUtils.errorToMessage(e, lang)
-                execute(botMessage(chatId, errorMessage))
+                onExecute(botMessage(chatId, errorMessage))
 
                 log.error("Error processing message", e)
 
             } finally {
                 chatJobs.remove(chatId)
                 log.info("Responding to ${update.message.from.userName} completed " +
-                        "(${System.currentTimeMillis() - startMillis}ms) " +
-                        "(" +
-                        "content.size = $contentSize" +
-                        ")")
+                        "(${System.currentTimeMillis() - startMillis}ms)")
             }
         }
 
@@ -156,7 +159,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         userMessage: String,
         messageProcessor: MessageProcessor,
         language: LanguageDetector.Language,
-    ): ChatMessage {
+    ) {
         val model = if (isThinking) OpenRouterConfig.DEEPSEEK_R1 else OpenRouterConfig.DEEPSEEK_V3
         var finalAssistantMessage: ChatMessage? = null
         val role = roleDetector.detectRole(userMessage, language)
@@ -174,7 +177,6 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
         }
 
         client.askChat(
-            chatId = chatId,
             model = model,
             messages = messages,
             systemMessage = systemMessage,
@@ -182,7 +184,7 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
             if (!messageIsEmpty(message)) messageHelper.cleanupRespondingMessageButtons(chatId)
             messageProcessor.processMessage(message)
         }
-        .sample(BotConfig.MESSAGE_SAMPLING_DURATION)
+        .sample(botConfig.messageSamplingDuration)
         .onCompletion { exception ->
             if (exception != null) throw exception
 
@@ -201,12 +203,13 @@ class Bot(botToken: String?, adminUserId: Long) : TelegramLongPollingBot(botToke
             )
         }
 
-        if (finalAssistantMessage!!.content.isEmpty()) {
+        if (finalAssistantMessage?.content?.isEmpty() != false) {
             throw BotUtils.ExceptionEmptyResponse()
         }
 
-        historyManager.addMessage(userId, finalAssistantMessage)
-        return finalAssistantMessage
+        if (finalAssistantMessage != null) {
+            historyManager.addMessage(userId, finalAssistantMessage!!)
+        }
     }
 
     private fun messageIsEmpty(message: ChatResponse): Boolean {

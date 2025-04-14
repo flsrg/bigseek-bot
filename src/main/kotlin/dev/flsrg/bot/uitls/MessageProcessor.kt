@@ -1,7 +1,7 @@
 package dev.flsrg.bot.uitls
 
-import dev.flsrg.bot.Bot
 import dev.flsrg.bot.BotConfig
+import dev.flsrg.bot.BotHandler
 import dev.flsrg.bot.roleplay.LanguageDetector
 import dev.flsrg.bot.uitls.BotUtils.botMessage
 import dev.flsrg.bot.uitls.BotUtils.editMessage
@@ -10,7 +10,11 @@ import dev.flsrg.llmpollingclient.model.ChatResponse
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessages
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException
 
-class MessageProcessor(private val bot: Bot, private val chatId: String) {
+class MessageProcessor(
+    private val botConfig: BotConfig,
+    private val botHandler: BotHandler,
+    private val chatId: String,
+) {
     companion object {
         private const val MARKDOWN_ERROR_MESSAGE = "can't parse entities"
         private const val MAX_MESSAGE_SKIPPED_TIMES = 2
@@ -24,31 +28,31 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
 
     private var messageSkippedTimes = 0
 
-    suspend fun processMessage(message: ChatResponse) = bot.apply {
+    suspend fun processMessage(message: ChatResponse) {
         message.choices.firstOrNull()?.delta?.let { delta ->
             delta.reasoning?.let { handleReasoning(it) }
             delta.content?.let { handleContent(it) }
         }
     }
 
-    private suspend fun Bot.handleReasoning(reasoning: String) {
+    private suspend fun handleReasoning(reasoning: String) {
         reasoningBuffer.append(reasoning)
 
-        if (reasoningBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
+        if (reasoningBuffer.length > botConfig.messageMaxLength) {
             sendReasoning(isLastMessage = true)
         }
     }
 
-    private suspend fun Bot.handleContent(content: String) {
+    private suspend fun handleContent(content: String) {
         finalAssistantMessage.append(content)
         contentBuffer.append(content)
 
-        if (contentBuffer.length > BotConfig.MESSAGE_MAX_LENGTH) {
+        if (contentBuffer.length > botConfig.messageMaxLength) {
             sendContent(isLastMessage = true, skipIfSendFailure = true)
         }
     }
 
-    suspend fun updateOrSend(vararg buttons: BotUtils.KeyboardButton, language: LanguageDetector.Language) = bot.apply {
+    suspend fun updateOrSend(vararg buttons: BotUtils.KeyboardButton, language: LanguageDetector.Language) {
         when {
             contentBuffer.isNotEmpty() -> {
                 clearReasoning(language)
@@ -58,16 +62,16 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         }
     }
 
-    private fun Bot.clearReasoning(language: LanguageDetector.Language) {
+    private fun clearReasoning(language: LanguageDetector.Language) {
         reasoningBuffer.clear()
         if (reasoningMessageIds.isNotEmpty()) {
             deleteAllReasoningMessages()
             reasoningMessageIds.clear()
-            execute(botMessage(chatId, Strings.ThinkingCompletedMessage.get(language)))
+            botHandler.onExecute(botMessage(chatId, Strings.ThinkingCompletedMessage.get(language)))
         }
     }
 
-    private suspend fun Bot.sendReasoning(
+    private suspend fun sendReasoning(
         buttons: List<BotUtils.KeyboardButton> = emptyList(),
         isLastMessage: Boolean = false,
     ) {
@@ -86,7 +90,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
         }
     }
 
-    private suspend fun Bot.sendContent(
+    private suspend fun sendContent(
         buttons: List<BotUtils.KeyboardButton> = emptyList(),
         isNeedFormatting: Boolean = true,
         skipIfSendFailure: Boolean = false,
@@ -99,7 +103,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                 message = contentMessage,
                 existingMessageId = contentMessageId,
                 keyboardButtons = buttons,
-                parseMode = if (isNeedFormatting) BotConfig.BOT_MESSAGES_PARSE_MODE else null
+                parseMode = if (isNeedFormatting) botConfig.botMessageParseMode else null
             )
         } catch (e: TelegramApiRequestException) {
             if (e.errorCode == BotConfig.BAD_REQUEST_ERROR_CODE && e.message?.contains(MARKDOWN_ERROR_MESSAGE) == true) {
@@ -123,16 +127,16 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
     /**
      * @return existing active editable message id
      */
-    private suspend fun Bot.updateOrSendMessage(
+    private suspend fun updateOrSendMessage(
         message: String,
         existingMessageId: Int?,
-        parseMode: String? = BotConfig.BOT_MESSAGES_PARSE_MODE,
+        parseMode: String? = botConfig.botMessageParseMode,
         keyboardButtons: List<BotUtils.KeyboardButton> = emptyList(),
     ): Int? {
         if (message.isEmpty()) return existingMessageId
         if (message.length == prevMessage?.length) return existingMessageId
 
-        return withRetry(maxRetries = 5, initialDelay = 5000, origin = "execute updateOrSendMessage") {
+        val messageId = withRetry(maxRetries = 5, initialDelay = 5000, origin = "execute updateOrSendMessage") {
             if (existingMessageId == null) {
                 val newMessage = botMessage(
                     chatId = chatId,
@@ -141,7 +145,7 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                     parseMode = parseMode,
                 )
 
-                execute(newMessage).messageId
+                return@withRetry botHandler.onExecute(newMessage).messageId
 
             } else {
                 val editMessage = editMessage(
@@ -152,17 +156,18 @@ class MessageProcessor(private val bot: Bot, private val chatId: String) {
                     parseMode = parseMode
                 )
 
-                execute(editMessage)
-                existingMessageId
+                botHandler.onExecute(editMessage)
+                return@withRetry existingMessageId
             }
         }
 
         prevMessage = message
+        return messageId
     }
 
     fun deleteAllReasoningMessages() {
         reasoningMessageIds.mapNotNull { it }.takeIf { it.isNotEmpty() }?.let { ids ->
-            bot.execute(
+            botHandler.onExecute(
                 DeleteMessages.builder()
                     .chatId(chatId)
                     .messageIds(ids)

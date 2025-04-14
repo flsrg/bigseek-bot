@@ -1,13 +1,9 @@
 package dev.flsrg.bot.roleplay
 
 import dev.flsrg.bot.uitls.MessageHelper
-import java.util.Locale
 
 object LanguageDetector {
-    enum class Language(val locale: Locale) {
-        EN(Locale.ENGLISH),
-        RU(Locale.of("ru"))
-    }
+    enum class Language { EN, RU }
 
     private val enWords = mutableSetOf("the", "and", "for", "you", "are", "hello").also {
         it.addAll(MessageHelper.EN_THINKING_PREFIX)
@@ -55,7 +51,7 @@ object LanguageDetector {
         return if (ruScore > enScore) Language.RU else Language.EN
     }
 
-    fun String.containsWord(word: String): Boolean {
+    private fun String.containsWord(word: String): Boolean {
         return this.contains(Regex("\\b${Regex.escape(word)}\\b"))
     }
 }
