@@ -1,7 +1,7 @@
 package dev.flsrg.bot
 
-import dev.flsrg.llmpollingclient.client.OpenRouterClient
-import dev.flsrg.llmpollingclient.client.OpenRouterConfig
+import dev.flsrg.client.client.OpenRouterClient
+import dev.flsrg.client.client.OpenRouterConfig
 import org.slf4j.LoggerFactory
 import org.telegram.telegrambots.meta.TelegramBotsApi
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession
